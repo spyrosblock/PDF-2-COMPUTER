@@ -3,36 +3,37 @@
 import { useMemo } from "react";
 import { useParams } from "next/navigation";
 import Link from "next/link";
-import type { Section, TestPart } from "@/lib/pdf";
+import type { Skill, TestSkill } from "@/lib/pdf";
 import { useBook } from "@/lib/books";
-import { slugToSection } from "@/lib/sections";
-import { useSectionTimer, formatDuration } from "@/lib/timers";
+import { slugToSkill } from "@/lib/skills";
+import { useSkillTimer, formatDuration } from "@/lib/timers";
 import { FormattedText } from "@/app/FormattedText";
 
-// One section of a test (Listening, Reading, or Writing) on its own page. It
-// shows the section's extracted text and a start/stop timer that the student
-// controls themselves; the timer is persisted per book/test/section, so it
-// survives navigation and reloads. The book is loaded from IndexedDB by the id
-// in the URL, and the section comes from the URL slug.
-export default function SectionPage() {
-  const params = useParams<{ bookId: string; test: string; section: string }>();
+// One skill of a test (Listening, Reading, or Writing) on its own page. It shows
+// the skill's extracted text — broken into its parts (Listening Part 1-4, Reading
+// Passage 1-3, Writing Task 1-2) when the split found them — and a start/stop
+// timer that the student controls themselves; the timer is persisted per
+// book/test/skill, so it survives navigation and reloads. The book is loaded from
+// IndexedDB by the id in the URL, and the skill comes from the URL slug.
+export default function SkillPage() {
+  const params = useParams<{ bookId: string; test: string; skill: string }>();
   const testNum = Number(params.test);
-  const section = slugToSection(params.section);
+  const skill = slugToSkill(params.skill);
   const { loading, book } = useBook(params.bookId);
 
-  // The extracted part for this test + section, if the book has one.
-  const part = useMemo<TestPart | undefined>(() => {
-    if (!section) return undefined;
-    return (book?.parts ?? []).find(
-      (p) => p.test === testNum && p.section === section,
+  // The extracted skill for this test + skill, if the book has one.
+  const testSkill = useMemo<TestSkill | undefined>(() => {
+    if (!skill) return undefined;
+    return (book?.skills ?? []).find(
+      (s) => s.test === testNum && s.skill === skill,
     );
-  }, [book, testNum, section]);
+  }, [book, testNum, skill]);
 
-  if (!section) {
+  if (!skill) {
     return (
-      <Shell testNum={testNum} bookId={params.bookId} title="Unknown section">
+      <Shell testNum={testNum} bookId={params.bookId} title="Unknown skill">
         <p className="text-sm text-black/60 dark:text-white/60">
-          &ldquo;{params.section}&rdquo; isn&apos;t a section of this test.
+          &ldquo;{params.skill}&rdquo; isn&apos;t a skill of this test.
         </p>
         <BackToTest bookId={params.bookId} />
       </Shell>
@@ -41,22 +42,40 @@ export default function SectionPage() {
 
   if (loading) {
     return (
-      <Shell testNum={testNum} bookId={params.bookId} title={section}>
+      <Shell testNum={testNum} bookId={params.bookId} title={skill}>
         <p className="text-sm text-black/60 dark:text-white/60">Loading…</p>
       </Shell>
     );
   }
 
   return (
-    <Shell testNum={testNum} bookId={params.bookId} title={section}>
-      <SectionTimerBar bookId={params.bookId} test={testNum} section={section} />
+    <Shell testNum={testNum} bookId={params.bookId} title={skill}>
+      <SkillTimerBar bookId={params.bookId} test={testNum} skill={skill} />
 
-      {part ? (
-        <FormattedText text={part.text} />
+      {testSkill ? (
+        testSkill.parts.length > 0 ? (
+          <div className="flex flex-col gap-8">
+            {testSkill.parts.map((part) => (
+              <section key={part.index} className="flex flex-col gap-2">
+                <h2 className="text-lg font-semibold tracking-tight">
+                  {part.label}
+                  {part.expectedQuestions !== null && (
+                    <span className="ml-2 text-sm font-normal text-black/50 dark:text-white/50">
+                      {part.expectedQuestions} questions
+                    </span>
+                  )}
+                </h2>
+                <FormattedText text={part.text} />
+              </section>
+            ))}
+          </div>
+        ) : (
+          <FormattedText text={testSkill.text} />
+        )
       ) : (
         <p className="text-sm text-black/60 dark:text-white/60">
-          The {section} section wasn&apos;t found for this test. It may not have
-          been present in the uploaded book.
+          The {skill} skill wasn&apos;t found for this test. It may not have been
+          present in the uploaded book.
         </p>
       )}
 
@@ -88,19 +107,19 @@ function Shell({
 }
 
 // The start/stop timer. Start and Stop toggle counting; Reset returns to 00:00.
-function SectionTimerBar({
+function SkillTimerBar({
   bookId,
   test,
-  section,
+  skill,
 }: {
   bookId: string;
   test: number;
-  section: Section;
+  skill: Skill;
 }) {
-  const { running, elapsedMs, start, stop, reset } = useSectionTimer(
+  const { running, elapsedMs, start, stop, reset } = useSkillTimer(
     bookId,
     test,
-    section,
+    skill,
   );
 
   return (

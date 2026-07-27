@@ -1,17 +1,18 @@
-// Splitting a Cambridge IELTS book into its 4 tests, and each test into its parts.
+// Splitting a Cambridge IELTS book into its 4 tests, and each test into its skills.
 //
 // These books lay out four full practice tests back-to-back, each test's pages
 // carrying a short running header / title like "Test 1", "Test 2 Reading", etc.
 // We locate the first page where each test's heading appears and slice the page
 // list at those boundaries. It's a heuristic on the raw text layer, not a
-// semantic parse — good enough to preview the four tests separately.
+// semantic parse — good enough to preview the four tests separately. Subdividing
+// each skill further into its parts is a later step (parts.ts).
 //
 // This module is pure text logic: it depends on nothing but the PageResult shape,
 // so it can be exercised in isolation with plain fixtures.
 
-import type { PageResult, Section, TestPart } from "./types";
+import type { PageResult, Skill, TestSkill } from "./types";
 
-const SECTIONS: Section[] = ["Listening", "Reading", "Writing", "Speaking"];
+const SKILLS: Skill[] = ["Listening", "Reading", "Writing", "Speaking"];
 
 // Which test numbers appear as a *heading-like* line on a page — i.e. a short
 // line that is essentially just "Test N" (running header or title), rather than
@@ -21,7 +22,7 @@ function headingTestNumbers(pageText: string): Set<number> {
   for (const raw of pageText.split(/\r?\n/)) {
     // "Test 1", "Test1", "TEST 2 Reading", "Test 3 Reading Passage" — the space
     // between "test" and the number is optional (some books render it glued), and
-    // a short tail is allowed so headers with a section label still match, but
+    // a short tail is allowed so headers with a skill label still match, but
     // sentences don't.
     const m = /^\s*test\s*([1-4])\b.{0,24}$/i.exec(raw.trim());
     if (m) nums.add(Number(m[1]));
@@ -29,20 +30,20 @@ function headingTestNumbers(pageText: string): Set<number> {
   return nums;
 }
 
-// Which of the four sections start on a page — detected from a heading-like line
-// that is essentially just the section name. A leading "Test N" is allowed (some
-// books glue the section onto the running header, e.g. "Test 1 Reading") and a
+// Which of the four skills start on a page — detected from a heading-like line
+// that is essentially just the skill name. A leading "Test N" is allowed (some
+// books glue the skill onto the running header, e.g. "Test 1 Reading") and a
 // short tail is allowed so "Reading Passage 1" / "Writing Task 1" still match,
 // but a sentence that merely opens with the word doesn't.
-function sectionHeadings(pageText: string): Set<Section> {
-  const found = new Set<Section>();
+function skillHeadings(pageText: string): Set<Skill> {
+  const found = new Set<Skill>();
   for (const raw of pageText.split(/\r?\n/)) {
     const m = /^\s*(?:test\s*[1-4]\s*)?(listening|reading|writing|speaking)\b.{0,24}$/i.exec(
       raw.trim(),
     );
     if (m) {
       const word = m[1].toLowerCase();
-      found.add((word[0].toUpperCase() + word.slice(1)) as Section);
+      found.add((word[0].toUpperCase() + word.slice(1)) as Skill);
     }
   }
   return found;
@@ -88,7 +89,7 @@ function slicePages(pages: PageResult[], from: number, to: number): string {
 }
 
 // Locate the four tests as page-index ranges into a trimmed page list — the
-// coarse boundary heuristic that splitIntoParts then subdivides into sections.
+// coarse boundary heuristic that splitIntoSkills then subdivides into skills.
 function testBoundaries(
   allPages: PageResult[],
 ): { pages: PageResult[]; ranges: { from: number; to: number }[] } {
@@ -131,25 +132,26 @@ function testBoundaries(
   return { pages, ranges };
 }
 
-// Split each test further into its parts (Listening, Reading, Writing, Speaking)
-// by finding, within the test's page range, the first page each section's heading
-// appears on — scanning forward so the parts stay in printed order. Pages before
-// the first detected section fold into that first part so nothing is dropped. If
-// no sections are found for a test, it's emitted as one part with section: null.
-export function splitIntoParts(allPages: PageResult[]): TestPart[] {
+// Split each test further into its skills (Listening, Reading, Writing, Speaking)
+// by finding, within the test's page range, the first page each skill's heading
+// appears on — scanning forward so the skills stay in printed order. Pages before
+// the first detected skill fold into that first skill so nothing is dropped. If
+// no skills are found for a test, it's emitted as one TestSkill with skill: null.
+// Each TestSkill's `parts` is left empty here; parts.ts subdivides it downstream.
+export function splitIntoSkills(allPages: PageResult[]): TestSkill[] {
   const { pages, ranges } = testBoundaries(allPages);
-  const parts: TestPart[] = [];
+  const skills: TestSkill[] = [];
 
   ranges.forEach((range, i) => {
     const test = i + 1;
 
-    // Where each detected section begins, in order.
-    const marks: { section: Section; idx: number }[] = [];
+    // Where each detected skill begins, in order.
+    const marks: { skill: Skill; idx: number }[] = [];
     let cursor = range.from;
-    for (const section of SECTIONS) {
+    for (const skill of SKILLS) {
       for (let p = cursor; p < range.to; p++) {
-        if (sectionHeadings(pages[p].text).has(section)) {
-          marks.push({ section, idx: p });
+        if (skillHeadings(pages[p].text).has(skill)) {
+          marks.push({ skill, idx: p });
           cursor = p + 1;
           break;
         }
@@ -157,29 +159,31 @@ export function splitIntoParts(allPages: PageResult[]): TestPart[] {
     }
 
     if (marks.length === 0) {
-      parts.push({
+      skills.push({
         test,
-        section: null,
+        skill: null,
         startPage: pages[range.from].page,
         endPage: pages[range.to - 1].page,
         text: slicePages(pages, range.from, range.to),
+        parts: [],
       });
       return;
     }
 
     marks.forEach((mark, m) => {
-      // Fold any preamble before the first section into that first part.
+      // Fold any preamble before the first skill into that first skill.
       const from = m === 0 ? range.from : mark.idx;
       const to = m + 1 < marks.length ? marks[m + 1].idx : range.to;
-      parts.push({
+      skills.push({
         test,
-        section: mark.section,
+        skill: mark.skill,
         startPage: pages[from].page,
         endPage: pages[to - 1].page,
         text: slicePages(pages, from, to),
+        parts: [],
       });
     });
   });
 
-  return parts;
+  return skills;
 }

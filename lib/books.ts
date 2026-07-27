@@ -1,7 +1,7 @@
 "use client";
 
 // Persistent store for uploaded books. Each book is one PDF the student
-// uploaded, split into its TestParts (a book holds up to 4 practice tests). The
+// uploaded, split into its TestSkills (a book holds up to 4 practice tests). The
 // split happens entirely in the browser (see lib/pdf), and the result is kept in
 // IndexedDB so it survives reloads and browser restarts — and so a student can
 // keep several books around, revisit them, and delete the ones they no longer
@@ -11,7 +11,7 @@
 // the lifetime of one tab.
 
 import { useCallback, useEffect, useState } from "react";
-import type { TestPart } from "./pdf";
+import type { TestSkill } from "./pdf";
 
 const DB_NAME = "p2c";
 const DB_VERSION = 1;
@@ -30,8 +30,8 @@ export type BookMeta = {
   tests: number[]; // distinct test numbers, ascending
 };
 
-// A full book record as persisted: its metadata plus the split parts.
-export type StoredBook = BookMeta & { parts: TestPart[] };
+// A full book record as persisted: its metadata plus the split skills.
+export type StoredBook = BookMeta & { skills: TestSkill[] };
 
 function openDB(): Promise<IDBDatabase> {
   return new Promise((resolve, reject) => {
@@ -79,32 +79,35 @@ function tx<T>(
   );
 }
 
-function distinctTests(parts: TestPart[]): number[] {
-  return [...new Set(parts.map((p) => p.test))].sort((a, b) => a - b);
+function distinctTests(skills: TestSkill[]): number[] {
+  return [...new Set(skills.map((s) => s.test))].sort((a, b) => a - b);
 }
 
 // Persist a freshly split book and return its generated id. The caller can then
 // navigate straight to /tests/<id>.
-export async function saveBook(name: string, parts: TestPart[]): Promise<string> {
+export async function saveBook(
+  name: string,
+  skills: TestSkill[],
+): Promise<string> {
   const book: StoredBook = {
     id: crypto.randomUUID(),
     name,
     createdAt: Date.now(),
-    tests: distinctTests(parts),
-    parts,
+    tests: distinctTests(skills),
+    skills,
   };
   await tx("readwrite", (s) => s.put(book));
   window.dispatchEvent(new Event(CHANGED_EVENT));
   return book.id;
 }
 
-// Load a single book with its parts, or null if the id isn't stored.
+// Load a single book with its skills, or null if the id isn't stored.
 export async function getBook(id: string): Promise<StoredBook | null> {
   const book = await tx<StoredBook | undefined>("readonly", (s) => s.get(id));
   return book ?? null;
 }
 
-// All stored books as metadata (no parts), newest first.
+// All stored books as metadata (no skills), newest first.
 export async function listBooks(): Promise<BookMeta[]> {
   const all = await tx<StoredBook[]>("readonly", (s) => s.getAll());
   return all

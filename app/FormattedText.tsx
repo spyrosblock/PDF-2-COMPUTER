@@ -1,4 +1,4 @@
-// Renders cleaned section text (see lib/pdf/format.ts) as readable prose.
+// Renders cleaned skill/part text (see lib/pdf/format.ts) as readable prose.
 //
 // The stored text uses "\n\n" between paragraphs; we split on that and emit a
 // <p> per paragraph inside a scrollable box. Replaces the old monospace <pre>

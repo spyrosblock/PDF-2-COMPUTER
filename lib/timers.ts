@@ -1,6 +1,6 @@
 "use client";
 
-// Per-section stopwatch, persisted so it survives reloads and browser restarts.
+// Per-skill stopwatch, persisted so it survives reloads and browser restarts.
 //
 // Each Listening/Reading/Writing page has its own timer that the student starts
 // and stops themselves. We store the accumulated (paused) time plus, when
@@ -29,8 +29,8 @@ const PREFIX = "p2c:timer:";
 // (the native "storage" event only fires in *other* tabs).
 const CHANGED_EVENT = "p2c:timer-changed";
 
-function keyFor(bookId: string, test: number, section: string): string {
-  return `${PREFIX}${bookId}:${test}:${section.toLowerCase()}`;
+function keyFor(bookId: string, test: number, skill: string): string {
+  return `${PREFIX}${bookId}:${test}:${skill.toLowerCase()}`;
 }
 
 function safeGet(key: string): string | null {
@@ -112,7 +112,7 @@ export function formatDuration(ms: number): string {
     : `${pad(minutes)}:${pad(seconds)}`;
 }
 
-export type SectionTimer = {
+export type SkillTimer = {
   running: boolean;
   elapsedMs: number; // live value, including the current run
   start: () => void;
@@ -120,13 +120,13 @@ export type SectionTimer = {
   reset: () => void;
 };
 
-// Start/stop stopwatch for one test section, backed by localStorage.
-export function useSectionTimer(
+// Start/stop stopwatch for one test skill, backed by localStorage.
+export function useSkillTimer(
   bookId: string,
   test: number,
-  section: string,
-): SectionTimer {
-  const key = keyFor(bookId, test, section);
+  skill: string,
+): SkillTimer {
+  const key = keyFor(bookId, test, skill);
 
   const state = useSyncExternalStore(
     useCallback((cb: () => void) => subscribe(key, cb), [key]),

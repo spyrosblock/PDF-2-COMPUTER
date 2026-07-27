@@ -1,6 +1,6 @@
-// Typographic cleanup of a TestPart's raw sliced text.
+// Typographic cleanup of a skill's (or part's) raw sliced text.
 //
-// splitIntoParts (split.ts) stores each part as a flat string: the PDF pages
+// splitIntoSkills (split.ts) stores each skill as a flat string: the PDF pages
 // concatenated with "----- Page N (source) -----" markers, carrying pdf.js's
 // hard line breaks (which follow the printed layout, not sentences), words
 // hyphenated across line ends, and stray page numbers / running headers. That
@@ -12,7 +12,7 @@
 // exercised in isolation with plain fixtures. It does NOT interpret the content
 // (passages vs. questions vs. answers); that semantic parse is a later step.
 
-import type { TestPart } from "./types";
+import type { TestSkill } from "./types";
 
 // The page-boundary line slicePages writes: "----- Page 12 (text) -----".
 // Splitting on it lets us drop the markers and treat each page separately (so a
@@ -76,9 +76,9 @@ function paragraphsFromPage(pageText: string): string {
   return paragraphs.join("\n\n");
 }
 
-// Clean one part's raw text into readable prose. Output contract: paragraphs
+// Clean one raw sliced text into readable prose. Output contract: paragraphs
 // separated by "\n\n", with no page markers — this is what the UI renders.
-export function formatSectionText(raw: string): string {
+export function formatText(raw: string): string {
   const dehyphenated = dehyphenate(raw);
 
   // Split into per-page chunks on the marker lines, dropping the markers.
@@ -104,7 +104,7 @@ export function formatSectionText(raw: string): string {
     .trim();
 }
 
-// Convenience wrapper: return the part with its text cleaned up.
-export function formatPart(part: TestPart): TestPart {
-  return { ...part, text: formatSectionText(part.text) };
+// Convenience wrapper: return the skill with its whole-skill text cleaned up.
+export function formatSkill(skill: TestSkill): TestSkill {
+  return { ...skill, text: formatText(skill.text) };
 }

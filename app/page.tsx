@@ -5,8 +5,9 @@ import { useRouter } from "next/navigation";
 import Link from "next/link";
 import {
   extractPdf,
-  splitIntoParts,
-  formatPart,
+  splitIntoSkills,
+  splitSkillIntoParts,
+  formatSkill,
   type PageResult,
   type Progress,
 } from "@/lib/pdf";
@@ -64,10 +65,16 @@ export default function UploadPage() {
   const fullText = pages
     .map((p) => `----- Page ${p.page} (${p.source}) -----\n${p.text.trim()}`)
     .join("\n\n");
-  // Clean up each part at save time, so the readable prose is what's previewed
-  // here and what saveBook persists to IndexedDB.
-  const parts = useMemo(
-    () => splitIntoParts(pages).map(formatPart),
+  // Split into skills and subdivide each into its parts. Parts come from the raw
+  // (marker-carrying) text, so splitSkillIntoParts runs before formatSkill strips
+  // the markers. The readable prose is what's previewed here and what saveBook
+  // persists to IndexedDB.
+  const skills = useMemo(
+    () =>
+      splitIntoSkills(pages).map((raw) => ({
+        ...formatSkill(raw),
+        parts: splitSkillIntoParts(raw),
+      })),
     [pages],
   );
 
@@ -77,7 +84,7 @@ export default function UploadPage() {
     setSaving(true);
     setSaveError("");
     try {
-      const id = await saveBook(fileName || "Untitled book", parts);
+      const id = await saveBook(fileName || "Untitled book", skills);
       router.push(`/tests/${id}`);
     } catch {
       setSaving(false);
@@ -185,7 +192,7 @@ export default function UploadPage() {
             <div className="flex gap-2">
               <button
                 onClick={goToTests}
-                disabled={parts.length === 0 || saving}
+                disabled={skills.length === 0 || saving}
                 className="rounded-full bg-foreground px-4 py-1.5 text-sm font-medium text-background transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-40"
               >
                 {saving ? "Saving…" : "Save & go to test selection"}
@@ -215,34 +222,57 @@ export default function UploadPage() {
 
           <div className="mt-4 flex flex-col gap-4">
             <h2 className="text-lg font-semibold tracking-tight">
-              Split into test parts
+              Split into skills
             </h2>
-            {parts.length === 0 ? (
+            {skills.length === 0 ? (
               <p className="text-sm text-black/60 dark:text-white/60">
                 Couldn&apos;t locate any &ldquo;Test N&rdquo; headings in the
                 extracted text, so there was nothing to split.
               </p>
             ) : (
-              parts.map((part) => (
+              skills.map((skill) => (
                 <section
-                  key={`${part.test}-${part.section ?? "full"}`}
+                  key={`${skill.test}-${skill.skill ?? "full"}`}
                   className="flex flex-col gap-2"
                 >
                   <div className="flex flex-wrap items-center justify-between gap-3">
                     <h3 className="text-sm font-semibold">
-                      Test {part.test} {part.section ?? "(full)"}{" "}
+                      Test {skill.test} {skill.skill ?? "(full)"}{" "}
                       <span className="font-normal text-black/50 dark:text-white/50">
-                        (pages {part.startPage}&ndash;{part.endPage})
+                        (pages {skill.startPage}&ndash;{skill.endPage})
                       </span>
                     </h3>
                     <button
-                      onClick={() => navigator.clipboard.writeText(part.text)}
+                      onClick={() => navigator.clipboard.writeText(skill.text)}
                       className="rounded-full border border-black/15 px-4 py-1.5 text-sm font-medium hover:bg-black/5 dark:border-white/20 dark:hover:bg-white/10"
                     >
                       Copy
                     </button>
                   </div>
-                  <FormattedText text={part.text} />
+                  {skill.parts.length > 0 ? (
+                    <div className="flex flex-col gap-4 border-l border-black/10 pl-4 dark:border-white/10">
+                      {skill.parts.map((part) => (
+                        <section
+                          key={part.index}
+                          className="flex flex-col gap-2"
+                        >
+                          <h4 className="text-xs font-semibold text-black/70 dark:text-white/70">
+                            {part.label}{" "}
+                            <span className="font-normal text-black/50 dark:text-white/50">
+                              (pages {part.startPage}&ndash;{part.endPage}
+                              {part.expectedQuestions !== null && (
+                                <>, {part.expectedQuestions} questions</>
+                              )}
+                              )
+                            </span>
+                          </h4>
+                          <FormattedText text={part.text} />
+                        </section>
+                      ))}
+                    </div>
+                  ) : (
+                    <FormattedText text={skill.text} />
+                  )}
                 </section>
               ))
             )}
