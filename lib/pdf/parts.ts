@@ -103,6 +103,16 @@ function hasHeadingLine(pageText: string, heading: RegExp): boolean {
   return pageText.split(/\r?\n/).some((raw) => heading.test(raw.trim()));
 }
 
+// Drop every line above the first part heading on a page, keeping the heading
+// line itself. Applied to the first page of every part's slice so anything
+// printed above the "Part N" keyword — a cover/instructions block, or the tail
+// of the previous part — is left out of that part.
+function dropAboveHeading(pageText: string, heading: RegExp): string {
+  const lines = pageText.split(/\r?\n/);
+  const at = lines.findIndex((raw) => heading.test(raw.trim()));
+  return at <= 0 ? pageText : lines.slice(at).join("\n");
+}
+
 type Mark = { index: number; idx: number };
 
 // Numbered mode: find the first page (scanning forward) that heads each expected
@@ -162,7 +172,8 @@ function wholeSkillPart(skill: TestSkill): Part {
 
 // Split one skill into its parts by locating each part's heading within the
 // skill's pages (see PartSpec for the per-skill detection mode), so parts stay in
-// printed order. Preamble before the first heading folds into Part 1. If the
+// printed order. Each part begins at its heading: anything printed above the
+// "Part N" keyword is dropped (including the preamble before Part 1). If the
 // count of detected headings doesn't match the skill's expected part count, we
 // give up and return a single whole-skill part. Skills with no spec (Speaking,
 // or a skill we couldn't identify) return [].
@@ -180,10 +191,16 @@ export function splitSkillIntoParts(skill: TestSkill): Part[] {
   if (marks.length !== spec.count) return [wholeSkillPart(skill)];
 
   return marks.map((mark, m) => {
-    // Fold any preamble before the first heading into Part 1.
-    const from = m === 0 ? 0 : mark.idx;
     const to = m + 1 < marks.length ? marks[m + 1].idx : pages.length;
-    const slice = pages.slice(from, to);
+    const raw = pages.slice(mark.idx, to);
+    // Start the part at its heading: drop anything printed above the "Part N"
+    // keyword on the slice's first page (for Part 1 this also drops the preamble
+    // pages before it, since the slice begins at the heading page).
+    const first = raw[0];
+    const slice = [
+      { ...first, text: dropAboveHeading(first.text, spec.heading) },
+      ...raw.slice(1),
+    ];
     return {
       index: mark.index,
       label: spec.label(mark.index),
