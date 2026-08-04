@@ -53,25 +53,37 @@ export default function SkillPage() {
       <SkillTimerBar bookId={params.bookId} test={testNum} skill={skill} />
 
       {testSkill ? (
-        testSkill.parts.length > 0 ? (
-          <div className="flex flex-col gap-8">
-            {testSkill.parts.map((part) => (
-              <section key={part.index} className="flex flex-col gap-2">
-                <h2 className="text-lg font-semibold tracking-tight">
-                  {part.label}
-                  {part.expectedQuestions !== null && (
-                    <span className="ml-2 text-sm font-normal text-black/50 dark:text-white/50">
-                      {part.expectedQuestions} questions
-                    </span>
-                  )}
-                </h2>
-                <FormattedText text={part.text} />
-              </section>
-            ))}
-          </div>
-        ) : (
-          <FormattedText text={testSkill.text} />
-        )
+        <>
+          {testSkill.parts.length > 0 ? (
+            <div className="flex flex-col gap-8">
+              {testSkill.parts.map((part) => (
+                <section key={part.index} className="flex flex-col gap-2">
+                  <h2 className="text-lg font-semibold tracking-tight">
+                    {part.label}
+                    {part.expectedQuestions !== null && (
+                      <span className="ml-2 text-sm font-normal text-black/50 dark:text-white/50">
+                        {part.expectedQuestions} questions
+                      </span>
+                    )}
+                  </h2>
+                  <FormattedText text={part.text} />
+                </section>
+              ))}
+            </div>
+          ) : (
+            <FormattedText text={testSkill.text} />
+          )}
+          {testSkill.answers && (
+            <details className="flex flex-col gap-2">
+              <summary className="cursor-pointer text-lg font-semibold tracking-tight">
+                Answers
+              </summary>
+              <div className="mt-2">
+                <FormattedText text={testSkill.answers} />
+              </div>
+            </details>
+          )}
+        </>
       ) : (
         <p className="text-sm text-black/60 dark:text-white/60">
           The {skill} skill wasn&apos;t found for this test. It may not have been

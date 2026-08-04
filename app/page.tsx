@@ -7,7 +7,9 @@ import {
   extractPdf,
   splitIntoSkills,
   splitSkillIntoParts,
+  splitOffAnswers,
   formatSkill,
+  formatText,
   type PageResult,
   type Progress,
 } from "@/lib/pdf";
@@ -65,16 +67,22 @@ export default function UploadPage() {
   const fullText = pages
     .map((p) => `----- Page ${p.page} (${p.source}) -----\n${p.text.trim()}`)
     .join("\n\n");
-  // Split into skills and subdivide each into its parts. Parts come from the raw
-  // (marker-carrying) text, so splitSkillIntoParts runs before formatSkill strips
-  // the markers. The readable prose is what's previewed here and what saveBook
-  // persists to IndexedDB.
+  // Split into skills, peel each skill's answer key off the end, then subdivide
+  // the remaining passages/questions into parts. Answer separation and part
+  // detection both run on the raw (marker-carrying) text, before formatSkill
+  // strips the markers — and answers are split off first so the answer page is
+  // never swept into the last part. The readable prose is what's previewed here
+  // and what saveBook persists to IndexedDB.
   const skills = useMemo(
     () =>
-      splitIntoSkills(pages).map((raw) => ({
-        ...formatSkill(raw),
-        parts: splitSkillIntoParts(raw),
-      })),
+      splitIntoSkills(pages).map((raw) => {
+        const { content, answers } = splitOffAnswers(raw);
+        return {
+          ...formatSkill(content),
+          parts: splitSkillIntoParts(content),
+          answers: answers ? formatText(answers) : null,
+        };
+      }),
     [pages],
   );
 
@@ -272,6 +280,16 @@ export default function UploadPage() {
                     </div>
                   ) : (
                     <FormattedText text={skill.text} />
+                  )}
+                  {skill.answers && (
+                    <details className="border-l border-black/10 pl-4 dark:border-white/10">
+                      <summary className="cursor-pointer text-xs font-semibold text-black/70 dark:text-white/70">
+                        Answers
+                      </summary>
+                      <div className="mt-2">
+                        <FormattedText text={skill.answers} />
+                      </div>
+                    </details>
                   )}
                 </section>
               ))

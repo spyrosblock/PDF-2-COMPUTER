@@ -33,7 +33,8 @@ export type TestSkill = {
   test: number; // 1..4
   skill: Skill | null; // null when a test's skills couldn't be located
   startPage: number; // inclusive, 1-based
-  endPage: number; // inclusive, 1-based
-  text: string; // whole-skill formatted text (fallback/preview)
+  endPage: number; // inclusive, 1-based (of the passages/questions, excluding answers)
+  text: string; // whole-skill formatted text (fallback/preview), answers excluded
   parts: Part[]; // [] when the skill couldn't be subdivided
+  answers: string | null; // formatted answer-key text, or null if the book had none
 };

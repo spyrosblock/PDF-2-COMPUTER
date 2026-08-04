@@ -166,6 +166,7 @@ export function splitIntoSkills(allPages: PageResult[]): TestSkill[] {
         endPage: pages[range.to - 1].page,
         text: slicePages(pages, range.from, range.to),
         parts: [],
+        answers: null,
       });
       return;
     }
@@ -181,6 +182,7 @@ export function splitIntoSkills(allPages: PageResult[]): TestSkill[] {
         endPage: pages[to - 1].page,
         text: slicePages(pages, from, to),
         parts: [],
+        answers: null,
       });
     });
   });

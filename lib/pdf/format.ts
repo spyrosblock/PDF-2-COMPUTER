@@ -24,9 +24,12 @@ const PAGE_NUMBER_ONLY = /^\d{1,4}$/;
 
 // Heading- or list-like lines that should keep their own break rather than be
 // folded into the surrounding paragraph: an all-caps run ("READING PASSAGE 1"),
-// a "Questions 1-6" group header, or a leading list marker ("A", "iv", "12.").
+// a "Questions 1-6" group header, a leading list marker ("A", "iv", "12."), or a
+// reconstructed table row (extract.ts joins its cells with " | ") — folding a
+// table row into a paragraph would destroy the row structure we recovered.
 function isStructuralLine(line: string): boolean {
   return (
+    / \| /.test(line) || // reconstructed table row
     /^questions?\b/i.test(line) ||
     /^[A-Z0-9][A-Z0-9 '":\-–—]{2,}$/.test(line) || // mostly-caps heading
     /^(?:[A-Za-z]|[ivxlIVXL]+|\d{1,3})[.)]\s+/.test(line) // "A." "iv)" "12."

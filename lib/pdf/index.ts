@@ -3,6 +3,7 @@
 export { extractPdf } from "./extract";
 export { splitIntoSkills } from "./split";
 export { splitSkillIntoParts } from "./parts";
+export { splitOffAnswers } from "./answers";
 export { formatText, formatSkill } from "./format";
 export { terminateOcr } from "./ocr";
 export type {
