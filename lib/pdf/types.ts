@@ -27,6 +27,7 @@ export type Part = {
   startPage: number; // inclusive, 1-based
   endPage: number; // inclusive, 1-based
   text: string; // formatted (formatText output)
+  images?: string[]; // rendered page images (data URLs) — Writing Task 1 only
 };
 
 export type TestSkill = {

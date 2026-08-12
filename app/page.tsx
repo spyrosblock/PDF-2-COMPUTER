@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useMemo, useRef, useState } from "react";
+import { Suspense, useCallback, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import {
@@ -8,22 +8,37 @@ import {
   splitIntoSkills,
   splitSkillIntoParts,
   splitOffAnswers,
+  attachWritingImages,
   formatSkill,
   formatText,
   type PageResult,
   type Progress,
+  type TestSkill,
 } from "@/lib/pdf";
 import { saveBook } from "@/lib/books";
+import { useDebug } from "@/lib/debug";
 import { FormattedText } from "@/app/FormattedText";
 
 type Status = "idle" | "working" | "done" | "error";
 
+// useDebug reads the URL query, so the page content must render under a
+// <Suspense> boundary — otherwise the production build fails to prerender it.
 export default function UploadPage() {
+  return (
+    <Suspense fallback={null}>
+      <UploadPageContent />
+    </Suspense>
+  );
+}
+
+function UploadPageContent() {
   const router = useRouter();
+  const debug = useDebug();
   const [status, setStatus] = useState<Status>("idle");
   const [fileName, setFileName] = useState<string>("");
   const [progress, setProgress] = useState<Progress | null>(null);
   const [pages, setPages] = useState<PageResult[]>([]);
+  const [skills, setSkills] = useState<TestSkill[]>([]);
   const [error, setError] = useState<string>("");
   const [saveError, setSaveError] = useState<string>("");
   const [saving, setSaving] = useState(false);
@@ -33,12 +48,31 @@ export default function UploadPage() {
     setStatus("working");
     setError("");
     setPages([]);
+    setSkills([]);
     setProgress(null);
     setFileName(file.name);
 
     try {
       const results = await extractPdf(file, (p) => setProgress(p));
       setPages(results);
+
+      // Split into skills, peel each skill's answer key off the end, then
+      // subdivide the remaining passages/questions into parts. Answer separation
+      // and part detection both run on the raw (marker-carrying) text, before
+      // formatSkill strips the markers — and answers are split off first so the
+      // answer page is never swept into the last part. Finally, rasterise each
+      // Writing Task 1 page to a full-page image (a second, cheap PDF pass) so the
+      // chart/graph the text layer can't carry is preserved. The result is what's
+      // previewed here and what saveBook persists to IndexedDB.
+      const built = splitIntoSkills(results).map((raw) => {
+        const { content, answers } = splitOffAnswers(raw);
+        return {
+          ...formatSkill(content),
+          parts: splitSkillIntoParts(content),
+          answers: answers ? formatText(answers) : null,
+        };
+      });
+      setSkills(await attachWritingImages(file, built));
       setStatus("done");
     } catch (err) {
       console.error(err);
@@ -55,6 +89,7 @@ export default function UploadPage() {
   const reset = () => {
     setStatus("idle");
     setPages([]);
+    setSkills([]);
     setProgress(null);
     setError("");
     setSaveError("");
@@ -67,25 +102,6 @@ export default function UploadPage() {
   const fullText = pages
     .map((p) => `----- Page ${p.page} (${p.source}) -----\n${p.text.trim()}`)
     .join("\n\n");
-  // Split into skills, peel each skill's answer key off the end, then subdivide
-  // the remaining passages/questions into parts. Answer separation and part
-  // detection both run on the raw (marker-carrying) text, before formatSkill
-  // strips the markers — and answers are split off first so the answer page is
-  // never swept into the last part. The readable prose is what's previewed here
-  // and what saveBook persists to IndexedDB.
-  const skills = useMemo(
-    () =>
-      splitIntoSkills(pages).map((raw) => {
-        const { content, answers } = splitOffAnswers(raw);
-        return {
-          ...formatSkill(content),
-          parts: splitSkillIntoParts(content),
-          answers: answers ? formatText(answers) : null,
-        };
-      }),
-    [pages],
-  );
-
   // Persist this book to IndexedDB, then open it. We wait for the write to
   // commit before navigating so the test pages find it on arrival.
   const goToTests = async () => {
@@ -205,12 +221,14 @@ export default function UploadPage() {
               >
                 {saving ? "Saving…" : "Save & go to test selection"}
               </button>
-              <button
-                onClick={() => navigator.clipboard.writeText(fullText)}
-                className="rounded-full border border-black/15 px-4 py-1.5 text-sm font-medium hover:bg-black/5 dark:border-white/20 dark:hover:bg-white/10"
-              >
-                Copy all
-              </button>
+              {debug && (
+                <button
+                  onClick={() => navigator.clipboard.writeText(fullText)}
+                  className="rounded-full border border-black/15 px-4 py-1.5 text-sm font-medium hover:bg-black/5 dark:border-white/20 dark:hover:bg-white/10"
+                >
+                  Copy all
+                </button>
+              )}
               <button
                 onClick={reset}
                 className="rounded-full border border-black/15 px-4 py-1.5 text-sm font-medium hover:bg-black/5 dark:border-white/20 dark:hover:bg-white/10"
@@ -224,10 +242,13 @@ export default function UploadPage() {
             <p className="text-sm text-red-700 dark:text-red-300">{saveError}</p>
           )}
 
-          <pre className="max-h-[60vh] overflow-auto whitespace-pre-wrap rounded-lg border border-black/10 bg-black/2 p-4 font-mono text-xs leading-relaxed dark:border-white/10 dark:bg-white/3">
-            {fullText}
-          </pre>
+          {debug && (
+            <pre className="max-h-[60vh] overflow-auto whitespace-pre-wrap rounded-lg border border-black/10 bg-black/2 p-4 font-mono text-xs leading-relaxed dark:border-white/10 dark:bg-white/3">
+              {fullText}
+            </pre>
+          )}
 
+          {debug && (
           <div className="mt-4 flex flex-col gap-4">
             <h2 className="text-lg font-semibold tracking-tight">
               Split into skills
@@ -275,6 +296,15 @@ export default function UploadPage() {
                             </span>
                           </h4>
                           <FormattedText text={part.text} />
+                          {part.images?.map((src, i) => (
+                            // eslint-disable-next-line @next/next/no-img-element
+                            <img
+                              key={i}
+                              src={src}
+                              alt={`${part.label} page ${i + 1}`}
+                              className="w-full rounded-lg border border-black/10 dark:border-white/10"
+                            />
+                          ))}
                         </section>
                       ))}
                     </div>
@@ -295,6 +325,7 @@ export default function UploadPage() {
               ))
             )}
           </div>
+          )}
         </section>
       )}
     </main>

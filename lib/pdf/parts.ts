@@ -34,6 +34,12 @@ type PartSpec = {
   heading: RegExp;
   questions: (number | null)[];
   label: (n: number) => string;
+  // Optional: end the LAST part's prose at this marker (inclusive), cutting at the
+  // marker's last occurrence. Used for Writing Task 2, which closes the skill with
+  // "Write at least 250 words." and has the next section's fragments / page
+  // furniture swept in after it. Only the final part is trimmed (Task 1 is left
+  // whole); the regex should be global so the last match can be found.
+  endAt?: RegExp;
 };
 
 const PART_SPECS: Partial<Record<Skill, PartSpec>> = {
@@ -59,12 +65,16 @@ const PART_SPECS: Partial<Record<Skill, PartSpec>> = {
     label: (n) => `Reading Passage ${n}`,
   },
   // Writing: 2 tasks, no fixed question count. Headed "WRITING TASK 1/2" or "Task N".
+  // Each task's prompt ends with "Write at least 150/250 words." — we cut the part
+  // there so nothing printed after it (the following section, page furniture) is
+  // kept.
   Writing: {
     count: 2,
     mode: "numbered",
     heading: /^(?:writing\s+)?task\s*([12])\b.{0,24}$/i,
     questions: [null, null],
     label: (n) => `Task ${n}`,
+    endAt: /write at least 250 words\./gi,
   },
 };
 
@@ -148,6 +158,18 @@ function detectByOrder(pages: PseudoPage[], spec: PartSpec): Mark[] {
   return marks;
 }
 
+// Cut formatted prose off at (and including) the LAST match of `marker`, then
+// trim. Used to end Writing Task 2 at its final "Write at least 250 words." line
+// so the junk the extractor sweeps in afterwards is dropped. `marker` must be a
+// global regex (we scan every match and keep the last). No match → text unchanged.
+function truncateAfter(text: string, marker: RegExp): string {
+  const re = new RegExp(marker.source, marker.flags.includes("g") ? marker.flags : marker.flags + "g");
+  let last: RegExpExecArray | null = null;
+  for (let m = re.exec(text); m !== null; m = re.exec(text)) last = m;
+  if (!last) return text;
+  return text.slice(0, last.index + last[0].length).trimEnd();
+}
+
 // Re-emit a run of pseudo-pages in the marker format formatText expects, so each
 // part is cleaned up exactly like the whole-skill text is.
 function sliceText(pages: PseudoPage[]): string {
@@ -201,13 +223,17 @@ export function splitSkillIntoParts(skill: TestSkill): Part[] {
       { ...first, text: dropAboveHeading(first.text, spec.heading) },
       ...raw.slice(1),
     ];
+    const text = formatText(sliceText(slice));
+    // Trim only the final part (Writing Task 2) at its "Write at least 250 words."
+    // line; earlier parts (Task 1) are left whole.
+    const isLast = mark.index === spec.count;
     return {
       index: mark.index,
       label: spec.label(mark.index),
       expectedQuestions: spec.questions[m] ?? null,
       startPage: slice[0].page,
       endPage: slice[slice.length - 1].page,
-      text: formatText(sliceText(slice)),
+      text: spec.endAt && isLast ? truncateAfter(text, spec.endAt) : text,
     };
   });
 }

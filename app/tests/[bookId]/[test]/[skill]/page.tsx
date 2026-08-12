@@ -1,9 +1,9 @@
 "use client";
 
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import { useParams } from "next/navigation";
 import Link from "next/link";
-import type { Skill, TestSkill } from "@/lib/pdf";
+import type { Part, Skill, TestSkill } from "@/lib/pdf";
 import { useBook } from "@/lib/books";
 import { slugToSkill } from "@/lib/skills";
 import { useSkillTimer, formatDuration } from "@/lib/timers";
@@ -53,37 +53,23 @@ export default function SkillPage() {
       <SkillTimerBar bookId={params.bookId} test={testNum} skill={skill} />
 
       {testSkill ? (
-        <>
-          {testSkill.parts.length > 0 ? (
-            <div className="flex flex-col gap-8">
-              {testSkill.parts.map((part) => (
-                <section key={part.index} className="flex flex-col gap-2">
-                  <h2 className="text-lg font-semibold tracking-tight">
-                    {part.label}
-                    {part.expectedQuestions !== null && (
-                      <span className="ml-2 text-sm font-normal text-black/50 dark:text-white/50">
-                        {part.expectedQuestions} questions
-                      </span>
-                    )}
-                  </h2>
-                  <FormattedText text={part.text} />
-                </section>
-              ))}
-            </div>
-          ) : (
+        testSkill.parts.length > 0 ? (
+          <SkillTabs testSkill={testSkill} />
+        ) : (
+          <>
             <FormattedText text={testSkill.text} />
-          )}
-          {testSkill.answers && (
-            <details className="flex flex-col gap-2">
-              <summary className="cursor-pointer text-lg font-semibold tracking-tight">
-                Answers
-              </summary>
-              <div className="mt-2">
-                <FormattedText text={testSkill.answers} />
-              </div>
-            </details>
-          )}
-        </>
+            {testSkill.answers && (
+              <details className="flex flex-col gap-2">
+                <summary className="cursor-pointer text-lg font-semibold tracking-tight">
+                  Answers
+                </summary>
+                <div className="mt-2">
+                  <FormattedText text={testSkill.answers} />
+                </div>
+              </details>
+            )}
+          </>
+        )
       ) : (
         <p className="text-sm text-black/60 dark:text-white/60">
           The {skill} skill wasn&apos;t found for this test. It may not have been
@@ -93,6 +79,87 @@ export default function SkillPage() {
 
       <BackToTest bookId={params.bookId} />
     </Shell>
+  );
+}
+
+// The skill's parts (Listening Part 1-4, Reading Passage 1-3, Writing Task 1-2)
+// shown one at a time, switched via a bar fixed to the bottom of the page. When
+// the book has an answer key it becomes an extra "Answers" tab at the end.
+function SkillTabs({ testSkill }: { testSkill: TestSkill }) {
+  const tabs = useMemo(() => {
+    const list = testSkill.parts.map((part) => ({
+      key: `part-${part.index}`,
+      label: part.label,
+      content: <PartContent part={part} />,
+    }));
+    if (testSkill.answers) {
+      list.push({
+        key: "answers",
+        label: "Answers",
+        content: <FormattedText text={testSkill.answers} />,
+      });
+    }
+    return list;
+  }, [testSkill]);
+
+  const [active, setActive] = useState(0);
+  const current = tabs[Math.min(active, tabs.length - 1)];
+
+  return (
+    <>
+      <section className="flex flex-col gap-2">{current.content}</section>
+
+      <nav className="fixed inset-x-0 bottom-0 z-20 border-t border-black/10 bg-background/90 backdrop-blur dark:border-white/10">
+        <div className="mx-auto flex w-full max-w-4xl items-stretch gap-1 px-6 py-2">
+          {tabs.map((tab, i) => (
+            <button
+              key={tab.key}
+              onClick={() => setActive(i)}
+              aria-current={i === active ? "page" : undefined}
+              className={
+                "flex-1 rounded-full px-3 py-2 text-xs font-medium transition-colors " +
+                (i === active
+                  ? "bg-foreground text-background"
+                  : "text-black/60 hover:bg-black/5 dark:text-white/60 dark:hover:bg-white/10")
+              }
+            >
+              {tab.label}
+            </button>
+          ))}
+        </div>
+      </nav>
+    </>
+  );
+}
+
+// One part's heading (label + expected question count) followed by its text and
+// any rendered page images (Writing Task 1). Writing Task 1 is a chart / graph /
+// map whose real content is the page image; its extracted text is garbled OCR of
+// that visual, so we hide it here and show only the heading + image. (The upload
+// debug view still renders the raw text for every part.)
+function PartContent({ part }: { part: Part }) {
+  const hideText = part.label === "Task 1";
+  return (
+    <>
+      <h2 className="text-lg font-semibold tracking-tight">
+        {part.label}
+        {part.expectedQuestions !== null && (
+          <span className="ml-2 text-sm font-normal text-black/50 dark:text-white/50">
+            {part.expectedQuestions} questions
+          </span>
+        )}
+      </h2>
+      {!hideText && <FormattedText text={part.text} />}
+      {part.images?.map((src, i) => (
+        // eslint-disable-next-line @next/next/no-img-element
+        <img
+          key={i}
+          src={src}
+          alt={`${part.label} page ${i + 1}`}
+          className="w-full rounded-lg border border-black/10 dark:border-white/10"
+        />
+      ))}
+    </>
   );
 }
 
@@ -108,7 +175,7 @@ function Shell({
   children: React.ReactNode;
 }) {
   return (
-    <main className="mx-auto flex w-full max-w-4xl flex-1 flex-col gap-6 px-6 py-10">
+    <main className="mx-auto flex w-full max-w-4xl flex-1 flex-col gap-6 px-6 pt-10 pb-28">
       <header className="flex flex-col gap-1">
         <p className="text-sm text-black/50 dark:text-white/50">Test {testNum}</p>
         <h1 className="text-2xl font-semibold tracking-tight">{title}</h1>

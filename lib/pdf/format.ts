@@ -7,17 +7,27 @@
 // reads poorly in the UI.
 //
 // This module turns that raw text into readable prose: paragraphs separated by
-// blank lines, no page markers. It is pure string logic that depends on nothing
-// but the marker format slicePages emits — so, like split.ts, it can be
-// exercised in isolation with plain fixtures. It does NOT interpret the content
-// (passages vs. questions vs. answers); that semantic parse is a later step.
+// blank lines, with each printed page introduced by a "--- start of page N ---"
+// banner so a reader can tell which page any passage/question came from. It is
+// pure string logic that depends on nothing but the marker format slicePages
+// emits — so, like split.ts, it can be exercised in isolation with plain
+// fixtures. It does NOT interpret the content (passages vs. questions vs.
+// answers); that semantic parse is a later step.
 
 import type { TestSkill } from "./types";
 
 // The page-boundary line slicePages writes: "----- Page 12 (text) -----".
-// Splitting on it lets us drop the markers and treat each page separately (so a
-// page number stuck on its own line can be dropped per page).
-const PAGE_MARKER = /^----- Page \d+ \((?:text|ocr|empty)\) -----$/;
+// Splitting on it lets us treat each page separately (so a page number stuck on
+// its own line can be dropped per page), and capture (group 1) the page number
+// so we can re-emit it as a human-readable banner.
+const PAGE_MARKER = /^----- Page (\d+) \((?:text|ocr|empty)\) -----$/;
+
+// The page banner we emit into the cleaned prose in place of the raw marker, so
+// the reader can tell which printed page each part of the text sits on. Kept as
+// its own paragraph (blank line either side) so FormattedText renders it alone.
+function pageBanner(page: number): string {
+  return `--- start of page ${page} ---`;
+}
 
 // Lines that are just a page number — a common PDF footer/header artifact.
 const PAGE_NUMBER_ONLY = /^\d{1,4}$/;
@@ -80,28 +90,29 @@ function paragraphsFromPage(pageText: string): string {
 }
 
 // Clean one raw sliced text into readable prose. Output contract: paragraphs
-// separated by "\n\n", with no page markers — this is what the UI renders.
+// separated by "\n\n", each page preceded by a "--- start of page N ---" banner
+// — this is what the UI renders. Pages that clean up to nothing (blank/empty)
+// are dropped, banner and all, so no banner ever stands without content.
 export function formatText(raw: string): string {
   const dehyphenated = dehyphenate(raw);
 
-  // Split into per-page chunks on the marker lines, dropping the markers.
-  const pages = dehyphenated
-    .split("\n")
-    .reduce<string[]>(
-      (acc, line) => {
-        if (PAGE_MARKER.test(line.trim())) {
-          acc.push(""); // start a new page chunk
-        } else {
-          acc[acc.length - 1] += (acc[acc.length - 1] ? "\n" : "") + line;
-        }
-        return acc;
-      },
-      [""],
-    );
+  // Split into per-page chunks on the marker lines, keeping each page's number
+  // so we can re-emit it as a banner in the marker's place.
+  const pages: { page: number; text: string }[] = [];
+  for (const line of dehyphenated.split("\n")) {
+    const m = PAGE_MARKER.exec(line.trim());
+    if (m) {
+      pages.push({ page: Number(m[1]), text: "" });
+    } else if (pages.length > 0) {
+      const cur = pages[pages.length - 1];
+      cur.text += (cur.text ? "\n" : "") + line;
+    }
+  }
 
   return pages
-    .map(paragraphsFromPage)
-    .filter((p) => p.length > 0)
+    .map((p) => ({ page: p.page, prose: paragraphsFromPage(p.text) }))
+    .filter((p) => p.prose.length > 0)
+    .map((p) => `${pageBanner(p.page)}\n\n${p.prose}`)
     .join("\n\n")
     .replace(/\n{3,}/g, "\n\n") // collapse any run of blank lines
     .trim();
