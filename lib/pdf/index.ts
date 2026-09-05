@@ -4,8 +4,9 @@ export { extractPdf } from "./extract";
 export { splitIntoSkills } from "./split";
 export { splitSkillIntoParts } from "./parts";
 export { splitOffAnswers } from "./answers";
-export { attachWritingImages } from "./render";
-export { formatText, formatSkill } from "./format";
+export { attachWritingImages, openPdf, renderPageImage } from "./render";
+export type { CropBox } from "./render";
+export { formatText, formatSkill, splitByPage } from "./format";
 export { terminateOcr } from "./ocr";
 export type {
   PageSource,
@@ -14,4 +15,8 @@ export type {
   Skill,
   TestSkill,
   Part,
+  PartQuestions,
+  Reading,
+  Listening,
+  Writing,
 } from "./types";

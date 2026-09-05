@@ -12,12 +12,16 @@ import {
   formatSkill,
   formatText,
   type PageResult,
+  type Part,
   type Progress,
   type TestSkill,
 } from "@/lib/pdf";
+import { analyzeBook, type AnalysisProgress } from "@/lib/analyze";
+import type { AnswerKey } from "@/lib/questions";
 import { saveBook } from "@/lib/books";
 import { useDebug } from "@/lib/debug";
 import { FormattedText } from "@/app/FormattedText";
+import { QuestionGroups } from "@/app/QuestionGroups";
 
 type Status = "idle" | "working" | "done" | "error";
 
@@ -37,6 +41,8 @@ function UploadPageContent() {
   const [status, setStatus] = useState<Status>("idle");
   const [fileName, setFileName] = useState<string>("");
   const [progress, setProgress] = useState<Progress | null>(null);
+  const [analysis, setAnalysis] = useState<AnalysisProgress | null>(null);
+  const [failed, setFailed] = useState<string[]>([]);
   const [pages, setPages] = useState<PageResult[]>([]);
   const [skills, setSkills] = useState<TestSkill[]>([]);
   const [error, setError] = useState<string>("");
@@ -50,6 +56,8 @@ function UploadPageContent() {
     setPages([]);
     setSkills([]);
     setProgress(null);
+    setAnalysis(null);
+    setFailed([]);
     setFileName(file.name);
 
     try {
@@ -72,7 +80,20 @@ function UploadPageContent() {
           answers: answers ? formatText(answers) : null,
         };
       });
-      setSkills(await attachWritingImages(file, built));
+      const withImages = await attachWritingImages(file, built);
+      setSkills(withImages);
+
+      // Last, read the questions out of every reading and listening part — the
+      // passage split off from the questions, the questions themselves, and the
+      // maps a listening set is answered against — and each skill's answer key
+      // into the answers themselves, so a finished paper can be marked. That
+      // takes judgement rather than a regex, so it goes through our /api routes
+      // to the Claude API — the one step that leaves the machine, and the slow
+      // one (several API calls per part), hence its own progress line. Whatever
+      // fails keeps the raw text it was to be read from.
+      const analysed = await analyzeBook(file, withImages, setAnalysis);
+      setSkills(analysed.skills);
+      setFailed(analysed.failed);
       setStatus("done");
     } catch (err) {
       console.error(err);
@@ -91,6 +112,8 @@ function UploadPageContent() {
     setPages([]);
     setSkills([]);
     setProgress(null);
+    setAnalysis(null);
+    setFailed([]);
     setError("");
     setSaveError("");
     setFileName("");
@@ -124,9 +147,12 @@ function UploadPageContent() {
             Upload IELTS practice PDF
           </h1>
           <p className="text-sm text-black/60 dark:text-white/60">
-            The PDF is read entirely in your browser — nothing is uploaded to a
-            server. We extract the text layer directly, falling back to
-            on-device OCR for any scanned page.
+            The PDF is read in your browser — the file itself never leaves your
+            machine. We extract the text layer directly, falling back to
+            on-device OCR for any scanned page. The reading and listening parts
+            are then sent as text (and, where they came out garbled, as page
+            images) to our server, to have their passages, questions, maps and
+            answer keys read out of them.
           </p>
         </div>
         <Link
@@ -176,27 +202,28 @@ function UploadPageContent() {
         )}
       </section>
 
-      {busy && progress && (
-        <div className="flex flex-col gap-2">
-          <div className="flex justify-between text-sm text-black/70 dark:text-white/70">
-            <span>
-              {progress.phase === "ocr"
-                ? `Running OCR on page ${progress.page}…`
-                : `Extracting page ${progress.page}…`}
-            </span>
-            <span>
-              {progress.page} / {progress.totalPages}
-            </span>
-          </div>
-          <div className="h-2 w-full overflow-hidden rounded-full bg-black/10 dark:bg-white/10">
-            <div
-              className="h-full rounded-full bg-foreground transition-all"
-              style={{
-                width: `${(progress.page / progress.totalPages) * 100}%`,
-              }}
-            />
-          </div>
-        </div>
+      {busy && progress && !analysis && (
+        <ProgressBar
+          label={
+            progress.phase === "ocr"
+              ? `Running OCR on page ${progress.page}…`
+              : `Extracting page ${progress.page}…`
+          }
+          done={progress.page}
+          total={progress.totalPages}
+        />
+      )}
+
+      {busy && analysis && (
+        <ProgressBar
+          label={
+            analysis.done === 0
+              ? "Reading passages, questions, maps and answers…"
+              : `Read ${analysis.label}…`
+          }
+          done={analysis.done}
+          total={analysis.total}
+        />
       )}
 
       {status === "error" && (
@@ -237,6 +264,14 @@ function UploadPageContent() {
               </button>
             </div>
           </div>
+
+          {failed.length > 0 && (
+            <p className="text-sm text-amber-700 dark:text-amber-400">
+              Couldn&apos;t read {failed.join(", ")} —{" "}
+              {failed.length === 1 ? "it keeps" : "they keep"} the raw extracted
+              text instead.
+            </p>
+          )}
 
           {saveError && (
             <p className="text-sm text-red-700 dark:text-red-300">{saveError}</p>
@@ -295,7 +330,7 @@ function UploadPageContent() {
                               )
                             </span>
                           </h4>
-                          <FormattedText text={part.text} />
+                          <PartAnalysis part={part} />
                           {part.images?.map((src, i) => (
                             // eslint-disable-next-line @next/next/no-img-element
                             <img
@@ -315,9 +350,25 @@ function UploadPageContent() {
                     <details className="border-l border-black/10 pl-4 dark:border-white/10">
                       <summary className="cursor-pointer text-xs font-semibold text-black/70 dark:text-white/70">
                         Answers
+                        {skill.answerKey && (
+                          <span className="font-normal text-black/50 dark:text-white/50">
+                            {" "}
+                            ({skill.answerKey.length} read)
+                          </span>
+                        )}
                       </summary>
-                      <div className="mt-2">
-                        <FormattedText text={skill.answers} />
+                      <div className="mt-2 flex flex-col gap-3">
+                        {skill.answerKey && (
+                          <AnswerKeyView answers={skill.answerKey} />
+                        )}
+                        <details>
+                          <summary className="cursor-pointer text-xs font-semibold text-black/50 dark:text-white/50">
+                            Answer key as extracted
+                          </summary>
+                          <div className="mt-2">
+                            <FormattedText text={skill.answers} />
+                          </div>
+                        </details>
                       </div>
                     </details>
                   )}
@@ -329,5 +380,126 @@ function UploadPageContent() {
         </section>
       )}
     </main>
+  );
+}
+
+// What the analysis made of one part, for the debug view: a reading part's
+// passage and questions, a listening part's questions and the maps hung on them,
+// and — under both — the raw extracted text they were read out of, so a bad
+// result can be compared against its source. A part the analysis never touched
+// (Writing, or one that failed) shows that raw text alone.
+function PartAnalysis({ part }: { part: Part }) {
+  const analysed = part.reading ?? part.listening;
+  if (!analysed) return <FormattedText text={part.text} />;
+
+  return (
+    <>
+      {part.reading && (
+        <>
+          <p className="text-xs font-semibold text-black/50 dark:text-white/50">
+            Passage
+          </p>
+          <FormattedText text={part.reading.passage} />
+        </>
+      )}
+      <p className="text-xs font-semibold text-black/50 dark:text-white/50">
+        Questions
+        {analysed.imagePages.length > 0 && (
+          <span className="font-normal">
+            {" "}
+            (read from page image
+            {analysed.imagePages.length === 1 ? "" : "s"}{" "}
+            {analysed.imagePages.join(", ")})
+          </span>
+        )}
+      </p>
+      {analysed.groups?.length ? (
+        <>
+          <QuestionGroups groups={analysed.groups} />
+          <details>
+            <summary className="cursor-pointer text-xs font-semibold text-black/50 dark:text-white/50">
+              Questions as extracted
+            </summary>
+            <div className="mt-2">
+              <FormattedText text={analysed.questions} />
+            </div>
+          </details>
+        </>
+      ) : (
+        <FormattedText text={analysed.questions} />
+      )}
+      <details>
+        <summary className="cursor-pointer text-xs font-semibold text-black/50 dark:text-white/50">
+          Raw extracted text
+        </summary>
+        <div className="mt-2">
+          <FormattedText text={part.text} />
+        </div>
+      </details>
+    </>
+  );
+}
+
+// The answer key as it was read: one row per numbered box, the book's own wording
+// on the left and — where the book allowed more than one form of it — everything
+// that will be counted right on the right. For the debug view, where the point is
+// to see at a glance whether a key is complete and whether its alternatives were
+// expanded rather than invented.
+function AnswerKeyView({ answers }: { answers: AnswerKey }) {
+  return (
+    <ul className="grid grid-cols-[repeat(auto-fill,minmax(15rem,1fr))] gap-x-4 gap-y-1 text-xs">
+      {answers.map((answer) => (
+        <li key={answer.n} className="flex gap-2">
+          <span className="w-6 shrink-0 text-right font-semibold tabular-nums text-black/50 dark:text-white/50">
+            {answer.n}
+          </span>
+          <span className="flex flex-col">
+            <span>
+              {answer.printed}
+              {answer.group && (
+                <span className="text-black/50 dark:text-white/50">
+                  {" "}
+                  (either order: {answer.group.join(", ")})
+                </span>
+              )}
+            </span>
+            {answer.accept.length > 1 && (
+              <span className="text-black/50 dark:text-white/50">
+                {answer.accept.join(" / ")}
+              </span>
+            )}
+          </span>
+        </li>
+      ))}
+    </ul>
+  );
+}
+
+// One labelled progress bar — used for both passes over the book (page
+// extraction, then the question analysis), which report progress the same way.
+function ProgressBar({
+  label,
+  done,
+  total,
+}: {
+  label: string;
+  done: number;
+  total: number;
+}) {
+  return (
+    <div className="flex flex-col gap-2">
+      <div className="flex justify-between gap-3 text-sm text-black/70 dark:text-white/70">
+        <span className="truncate">{label}</span>
+        <span className="shrink-0">
+          {done} / {total}
+        </span>
+      </div>
+      <div className="h-2 w-full overflow-hidden rounded-full bg-black/10 dark:bg-white/10">
+        <div
+          className="h-full rounded-full bg-foreground transition-all"
+          style={{ width: `${total > 0 ? (done / total) * 100 : 0}%` }}
+        />
+      </div>
+    </div>
   );
 }

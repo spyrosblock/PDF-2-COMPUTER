@@ -29,6 +29,10 @@ function pageBanner(page: number): string {
   return `--- start of page ${page} ---`;
 }
 
+// The same banner, as a pattern — so formatted text can be taken apart page by
+// page again (see splitByPage).
+const PAGE_BANNER = /^--- start of page (\d+) ---$/;
+
 // Lines that are just a page number — a common PDF footer/header artifact.
 const PAGE_NUMBER_ONLY = /^\d{1,4}$/;
 
@@ -116,6 +120,28 @@ export function formatText(raw: string): string {
     .join("\n\n")
     .replace(/\n{3,}/g, "\n\n") // collapse any run of blank lines
     .trim();
+}
+
+// The inverse of the banners formatText writes: take formatted prose apart into
+// the printed pages it was assembled from, each with its page number. Lets a
+// later step work a page at a time (the reading extraction sends pages to the
+// API one by one) without keeping a second copy of the text around. Anything
+// before the first banner is dropped, and a page whose prose is empty never had
+// a banner to begin with, so the result only ever lists pages with content.
+export function splitByPage(
+  formatted: string,
+): { page: number; text: string }[] {
+  const pages: { page: number; text: string }[] = [];
+  for (const line of formatted.split("\n")) {
+    const m = PAGE_BANNER.exec(line.trim());
+    if (m) {
+      pages.push({ page: Number(m[1]), text: "" });
+    } else if (pages.length > 0) {
+      const cur = pages[pages.length - 1];
+      cur.text += (cur.text ? "\n" : "") + line;
+    }
+  }
+  return pages.map((p) => ({ ...p, text: p.text.trim() }));
 }
 
 // Convenience wrapper: return the skill with its whole-skill text cleaned up.
