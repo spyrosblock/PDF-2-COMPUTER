@@ -46,3 +46,9 @@ next-env.d.ts
 
 # pdf.js runtime assets, copied from node_modules by scripts/copy-pdfjs-assets.mjs
 /public/pdfjs/
+
+# local scratch diagnostics
+*.tmp.mjs
+
+# tesseract language data, fetched at runtime
+*.traineddata
