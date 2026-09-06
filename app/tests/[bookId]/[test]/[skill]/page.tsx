@@ -121,8 +121,7 @@ export default function SkillPage() {
 }
 
 // The skill's parts (Listening Part 1-4, Reading Passage 1-3, Writing Task 1-2)
-// shown one at a time, switched via a bar fixed to the bottom of the page. When
-// the book has an answer key it becomes an extra "Answers" tab at the end.
+// shown one at a time, switched via a bar fixed to the bottom of the page.
 function SkillTabs({
   testSkill,
   answers,
@@ -132,21 +131,15 @@ function SkillTabs({
   answers: AnswerSheet;
   skill: Skill;
 }) {
-  const tabs = useMemo(() => {
-    const list = testSkill.parts.map((part) => ({
-      key: `part-${part.index}`,
-      label: part.label,
-      content: <PartContent part={part} answers={answers} skill={skill} />,
-    }));
-    if (testSkill.answers) {
-      list.push({
-        key: "answers",
-        label: "Answers",
-        content: <FormattedText text={testSkill.answers} />,
-      });
-    }
-    return list;
-  }, [testSkill, answers, skill]);
+  const tabs = useMemo(
+    () =>
+      testSkill.parts.map((part) => ({
+        key: `part-${part.index}`,
+        label: part.label,
+        content: <PartContent part={part} answers={answers} skill={skill} />,
+      })),
+    [testSkill, answers, skill],
+  );
 
   const [active, setActive] = useState(0);
   const current = tabs[Math.min(active, tabs.length - 1)];
