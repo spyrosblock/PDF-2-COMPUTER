@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import { useBook } from "@/lib/books";
+import { ThemeToggle } from "@/app/ThemeToggle";
 
 // Test selection for one saved book: the practice tests it was split into,
 // read from IndexedDB by the id in the URL.
@@ -15,7 +16,10 @@ export default function TestSelectionPage() {
   if (loading) {
     return (
       <main className="mx-auto flex w-full max-w-4xl flex-1 flex-col gap-4 px-6 py-10">
-        <h1 className="text-2xl font-semibold tracking-tight">Select a test</h1>
+        <header className="flex flex-wrap items-center justify-between gap-3">
+          <h1 className="text-2xl font-semibold tracking-tight">Select a test</h1>
+          <ThemeToggle />
+        </header>
         <p className="text-sm text-black/60 dark:text-white/60">Loading…</p>
       </main>
     );
@@ -24,7 +28,10 @@ export default function TestSelectionPage() {
   if (!book || tests.length === 0) {
     return (
       <main className="mx-auto flex w-full max-w-4xl flex-1 flex-col gap-4 px-6 py-10">
-        <h1 className="text-2xl font-semibold tracking-tight">Select a test</h1>
+        <header className="flex flex-wrap items-center justify-between gap-3">
+          <h1 className="text-2xl font-semibold tracking-tight">Select a test</h1>
+          <ThemeToggle />
+        </header>
         <p className="text-sm text-black/60 dark:text-white/60">
           This book couldn&apos;t be found. It may have been deleted.
         </p>
@@ -40,11 +47,14 @@ export default function TestSelectionPage() {
 
   return (
     <main className="mx-auto flex w-full max-w-4xl flex-1 flex-col gap-6 px-6 py-10">
-      <header className="flex flex-col gap-1">
-        <h1 className="text-2xl font-semibold tracking-tight">Select a test</h1>
-        <p className="text-sm text-black/60 dark:text-white/60">
-          {book.name || "Untitled book"}
-        </p>
+      <header className="flex flex-wrap items-start justify-between gap-3">
+        <div className="flex flex-col gap-1">
+          <h1 className="text-2xl font-semibold tracking-tight">Select a test</h1>
+          <p className="text-sm text-black/60 dark:text-white/60">
+            {book.name || "Untitled book"}
+          </p>
+        </div>
+        <ThemeToggle />
       </header>
 
       <div className="flex flex-col gap-4">

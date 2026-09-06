@@ -3,6 +3,7 @@
 import { useState } from "react";
 import Link from "next/link";
 import { useBooks, deleteBook, type BookMeta } from "@/lib/books";
+import { ThemeToggle } from "@/app/ThemeToggle";
 
 // Library of saved books, newest first: open or delete one. Nothing stored yet
 // drops to an "upload first" state.
@@ -13,7 +14,10 @@ export default function LibraryPage() {
   if (!books || books.length === 0) {
     return (
       <main className="mx-auto flex w-full max-w-4xl flex-1 flex-col gap-4 px-6 py-10">
-        <h1 className="text-2xl font-semibold tracking-tight">Saved books</h1>
+        <header className="flex flex-wrap items-center justify-between gap-3">
+          <h1 className="text-2xl font-semibold tracking-tight">Saved books</h1>
+          <ThemeToggle />
+        </header>
         <p className="text-sm text-black/60 dark:text-white/60">
           {books === null
             ? "Loading your saved books…"
@@ -38,12 +42,15 @@ export default function LibraryPage() {
             Pick a book to choose a test, or delete ones you no longer need.
           </p>
         </div>
-        <Link
-          href="/"
-          className="w-fit rounded-full bg-foreground px-4 py-1.5 text-sm font-medium text-background transition-opacity hover:opacity-90"
-        >
-          Upload another
-        </Link>
+        <div className="flex shrink-0 items-center gap-2">
+          <ThemeToggle />
+          <Link
+            href="/"
+            className="w-fit rounded-full bg-foreground px-4 py-1.5 text-sm font-medium text-background transition-opacity hover:opacity-90"
+          >
+            Upload another
+          </Link>
+        </div>
       </header>
 
       <ul className="flex flex-col gap-3">

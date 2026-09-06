@@ -24,6 +24,7 @@ import { saveBook } from "@/lib/books";
 import { useDebug } from "@/lib/debug";
 import { FormattedText } from "@/app/FormattedText";
 import { QuestionGroups } from "@/app/QuestionGroups";
+import { ThemeToggle } from "@/app/ThemeToggle";
 
 type Status = "idle" | "working" | "done" | "error";
 
@@ -167,12 +168,15 @@ function UploadPageContent() {
             Upload IELTS practice PDF
           </h1>
         </div>
-        <Link
-          href="/tests"
-          className="shrink-0 rounded-full border border-black/15 px-4 py-1.5 text-sm font-medium hover:bg-black/5 dark:border-white/20 dark:hover:bg-white/10"
-        >
-          Saved books
-        </Link>
+        <div className="flex shrink-0 items-center gap-2">
+          <ThemeToggle />
+          <Link
+            href="/tests"
+            className="rounded-full border border-black/15 px-4 py-1.5 text-sm font-medium hover:bg-black/5 dark:border-white/20 dark:hover:bg-white/10"
+          >
+            Saved books
+          </Link>
+        </div>
       </header>
 
       <section

@@ -11,6 +11,7 @@ import { useAnswers, type AnswerSheet } from "@/lib/answers";
 import { FormattedText } from "@/app/FormattedText";
 import { QuestionGroups } from "@/app/QuestionGroups";
 import { Results } from "@/app/Results";
+import { ThemeToggle } from "@/app/ThemeToggle";
 import { markSheet, type Marking } from "@/lib/questions";
 
 // One skill of a test on its own page: extracted text broken into parts, plus a
@@ -368,9 +369,14 @@ function Shell({
 }) {
   return (
     <main className="flex w-full flex-1 flex-col gap-6 px-3 pt-10 pb-28 md:px-4">
-      <header className="flex flex-col gap-1">
-        <p className="text-sm text-black/50 dark:text-white/50">Test {testNum}</p>
-        <h1 className="text-2xl font-semibold tracking-tight">{title}</h1>
+      <header className="flex flex-wrap items-start justify-between gap-3">
+        <div className="flex flex-col gap-1">
+          <p className="text-sm text-black/50 dark:text-white/50">
+            Test {testNum}
+          </p>
+          <h1 className="text-2xl font-semibold tracking-tight">{title}</h1>
+        </div>
+        <ThemeToggle />
       </header>
       {children}
     </main>

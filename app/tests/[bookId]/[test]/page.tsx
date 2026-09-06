@@ -6,6 +6,7 @@ import Link from "next/link";
 import type { Skill, TestSkill } from "@/lib/pdf";
 import { useBook } from "@/lib/books";
 import { OFFERED_SKILLS, skillToSlug } from "@/lib/skills";
+import { ThemeToggle } from "@/app/ThemeToggle";
 
 // How long each skill runs, shown as a note on its card.
 const SKILL_DURATIONS: Record<Skill, string> = {
@@ -34,9 +35,12 @@ export default function TestPage() {
   if (loading) {
     return (
       <main className="mx-auto flex w-full max-w-4xl flex-1 flex-col gap-4 px-6 py-10">
-        <h1 className="text-2xl font-semibold tracking-tight">
-          Test {params.test}
-        </h1>
+        <header className="flex flex-wrap items-center justify-between gap-3">
+          <h1 className="text-2xl font-semibold tracking-tight">
+            Test {params.test}
+          </h1>
+          <ThemeToggle />
+        </header>
         <p className="text-sm text-black/60 dark:text-white/60">Loading…</p>
       </main>
     );
@@ -45,9 +49,12 @@ export default function TestPage() {
   if (!book || !OFFERED_SKILLS.some((s) => bySkill.has(s))) {
     return (
       <main className="mx-auto flex w-full max-w-4xl flex-1 flex-col gap-4 px-6 py-10">
-        <h1 className="text-2xl font-semibold tracking-tight">
-          Test {params.test}
-        </h1>
+        <header className="flex flex-wrap items-center justify-between gap-3">
+          <h1 className="text-2xl font-semibold tracking-tight">
+            Test {params.test}
+          </h1>
+          <ThemeToggle />
+        </header>
         <p className="text-sm text-black/60 dark:text-white/60">
           Nothing to show for this test. The book may have been deleted, or this
           test wasn&apos;t found in it.
@@ -64,8 +71,9 @@ export default function TestPage() {
 
   return (
     <main className="mx-auto flex w-full max-w-4xl flex-1 flex-col gap-6 px-6 py-10">
-      <header className="flex flex-col gap-1">
+      <header className="flex flex-wrap items-center justify-between gap-3">
         <h1 className="text-2xl font-semibold tracking-tight">Test {testNum}</h1>
+        <ThemeToggle />
       </header>
 
       <div className="flex flex-col gap-4">
