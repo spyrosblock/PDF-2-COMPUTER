@@ -168,14 +168,11 @@ function inSection(p: MarkedPage): boolean {
   return p.marker || (p.test !== null && p.skill !== null);
 }
 
-// Find the back-of-book key section and split it per skill, keyed "1:Reading"
-// (test number, then skill name). The section is the run of consecutive
-// belonging pages that carries the running header at least once — which is
-// what keeps a test's own Listening opening page (a single test and a skill
-// heading, but no header anywhere near it) out. Inside the run, a page naming
-// a test and a skill opens that skill's key and the pages after it continue it.
-// Books that print per-skill keys instead (or none) yield an empty map.
-export function splitBookAnswers(pages: PageResult[]): Map<string, string> {
+// The runs of belonging pages that carry the running header at least once —
+// the key section, and nothing else. Requiring the header is what keeps a
+// test's own Listening opening page (a single test and a skill heading, but no
+// header anywhere near it) out.
+function keySectionRuns(pages: PageResult[]): { at: number; run: MarkedPage[] }[] {
   const marked: MarkedPage[] = pages.map((page) => {
     const lines = page.text.split("\n");
     return {
@@ -186,24 +183,52 @@ export function splitBookAnswers(pages: PageResult[]): Map<string, string> {
     };
   });
 
-  const buckets = new Map<string, PseudoPage[]>();
-
+  const runs: { at: number; run: MarkedPage[] }[] = [];
   for (let i = 0; i < marked.length; i++) {
     if (!inSection(marked[i])) continue;
     let end = i;
     while (end + 1 < marked.length && inSection(marked[end + 1])) end++;
     const run = marked.slice(i, end + 1);
+    if (run.some((p) => p.marker)) runs.push({ at: i, run });
     i = end;
-    if (!run.some((p) => p.marker)) continue;
+  }
+  return runs;
+}
 
+// Where the key section starts, as an index into `pages`, or -1 if the book
+// has none. split.ts cuts the tests off there: a section printed *before* the
+// audio scripts (ielts14 prints it in both places) would otherwise be swept
+// into the last test's last skill.
+export function bookAnswersIndex(pages: PageResult[]): number {
+  const runs = keySectionRuns(pages).filter(({ run }) =>
+    run.some((p) => p.test !== null && p.skill !== null),
+  );
+  return runs.length > 0 ? runs[0].at : -1;
+}
+
+// Find the back-of-book key section and split it per skill, keyed "1:Reading"
+// (test number, then skill name). Inside a run, a page naming a test and a
+// skill opens that skill's key and the pages after it continue it. Books that
+// print per-skill keys instead (or none) yield an empty map.
+export function splitBookAnswers(pages: PageResult[]): Map<string, string> {
+  const buckets = new Map<string, PseudoPage[]>();
+
+  for (const { run } of keySectionRuns(pages)) {
+    const found = new Map<string, PseudoPage[]>();
     let current: string | null = null;
     for (const p of run) {
       if (p.test && p.skill) current = `${p.test}:${p.skill}`;
       if (!current) continue;
-      const bucket = buckets.get(current) ?? [];
+      const bucket = found.get(current) ?? [];
       bucket.push({ page: p.page.page, source: p.page.source, lines: p.lines });
-      buckets.set(current, bucket);
+      found.set(current, bucket);
     }
+
+    // First printing wins. Some scans carry the whole section twice (ielts14
+    // prints it before the audio scripts and again at the back); the second
+    // copy is the same key, and appending it would hand the reader every
+    // answer twice.
+    for (const [key, pgs] of found) if (!buckets.has(key)) buckets.set(key, pgs);
   }
 
   return new Map([...buckets].map(([key, pgs]) => [key, sliceText(pgs)]));

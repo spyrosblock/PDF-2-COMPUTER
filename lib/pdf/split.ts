@@ -4,6 +4,7 @@
 // text layer, not a semantic parse. Pure text logic over the PageResult shape,
 // so it can be exercised in isolation with plain fixtures.
 
+import { bookAnswersIndex } from "./answers";
 import type { PageResult, Skill, TestSkill } from "./types";
 
 const SKILLS: Skill[] = ["Listening", "Reading", "Writing", "Speaking"];
@@ -73,8 +74,14 @@ function testBoundaries(
 ): { pages: PageResult[]; ranges: { from: number; to: number }[] } {
   if (allPages.length === 0) return { pages: [], ranges: [] };
 
-  // Drop the trailing "Audio scripts" section so it doesn't bleed into Test 4.
-  const cut = audioScriptsIndex(allPages);
+  // Drop the book's trailing matter so it doesn't bleed into Test 4: the
+  // "Audio scripts" section, and the back-of-book answer keys — which some
+  // books (ielts14) print *before* the audio scripts. Cut at whichever comes
+  // first; answers.ts still reads the key section off the untrimmed pages.
+  const ends = [audioScriptsIndex(allPages), bookAnswersIndex(allPages)].filter(
+    (i) => i !== -1,
+  );
+  const cut = ends.length > 0 ? Math.min(...ends) : -1;
   const pages = cut === -1 ? allPages : allPages.slice(0, cut);
   if (pages.length === 0) return { pages: [], ranges: [] };
 
