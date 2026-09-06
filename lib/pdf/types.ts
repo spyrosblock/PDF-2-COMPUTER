@@ -21,14 +21,12 @@ export type Progress = {
 // The four skills every IELTS test is made of, in the order the books print them.
 export type Skill = "Listening" | "Reading" | "Writing" | "Speaking";
 
-// A part's questions, read out of its text by lib/analyze (which asks the Claude
-// API to do the reading). Absent on parts that were never analysed and on any
-// part whose analysis failed — `text` remains the fallback in both cases.
+// A part's questions, read out of its text by lib/analyze. Absent when the
+// part was never analysed or the analysis failed — `text` is the fallback.
 export type PartQuestions = {
   questions: string; // the question groups as text, "" if none were found
-  groups?: QuestionGroup[]; // those same questions as structure, when the last step
-  // managed it; absent when it didn't, and `questions` is then shown as text
-  imagePages: number[]; // pages the API asked to see as images to read the questions
+  groups?: QuestionGroup[]; // those questions as structure, when structuring succeeded
+  imagePages: number[]; // pages the API asked to see as images
 };
 
 // A reading part, which also has the passage the questions are about, split off
@@ -37,14 +35,12 @@ export type Reading = PartQuestions & {
   passage: string; // the passage on its own, "" if none was found
 };
 
-// A listening part, which has no passage: the recording is heard, not printed, so
-// everything on the page is questions. Any map or plan its questions are answered
-// against is carried on the question group itself, as an image (lib/questions).
+// A listening part: no passage (the recording is heard, not printed). Any map
+// its questions are answered against is carried on the question group itself.
 export type Listening = PartQuestions;
 
-// A writing task's prompt, read out of its text by lib/analyze. Task 2 only —
-// Task 1 is a chart, kept as a page image, and its text is garbled OCR of that
-// visual.
+// A writing task's prompt, read by lib/analyze. Task 2 only — Task 1 is a
+// chart kept as a page image.
 export type Writing = {
   prompt: string; // the task description on its own, "" if none was found
 };
@@ -71,7 +67,6 @@ export type TestSkill = {
   text: string; // whole-skill formatted text (fallback/preview), answers excluded
   parts: Part[]; // [] when the skill couldn't be subdivided
   answers: string | null; // formatted answer-key text, or null if the book had none
-  answerKey?: AnswerKey; // those same answers read into one entry per numbered
-  // box, so a student's sheet can be marked against them (lib/questions/key.ts);
-  // absent when the book carried no key, or when reading it failed
+  answerKey?: AnswerKey; // the answers as markable entries (lib/questions/key.ts);
+  // absent when the book had no key or reading it failed
 };

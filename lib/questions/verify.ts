@@ -1,31 +1,20 @@
-// Checking a structured set against the text it came from.
-//
-// The model is copying, not composing, so most of what it returns can be checked
-// against the source without knowing anything about the passage: the heading says
-// which question numbers the set covers, and a set that prints a list of lettered
-// options must come back carrying them. Both have been seen to fail — a "Questions
-// 25 and 26" set came back correct in every respect except that its five options
-// had vanished — and both are silent failures, which is what makes them worth
-// catching: a student sees a tidy question with nothing to choose from.
-//
-// This is a coverage check, not a proof. It cannot tell a reworded question from a
-// copied one; it tells the caller whether anything printed is plainly missing, so
-// the set can be asked for again (app/api/reading/questions/structure/route.ts).
+// Checking a structured set against the text it came from: do the numbers the
+// heading claims all appear, and does the printed option list come back? Both
+// fail silently — a tidy question with nothing to choose from. A coverage
+// check, not a proof: it can't catch rewording, only plainly missing content.
 
 import { groupNumbers, headingNumbers, type QuestionGroup } from "./types";
 import { isSetHeading } from "./split";
 
-// The numbers the source's own heading claims. Only the first heading line is
-// read; a chunk holds one set.
+// The numbers the source's heading claims (a chunk holds one set).
 function sourceNumbers(set: string): number[] {
   const line = set.split(/\r?\n/).find(isSetHeading);
   return line ? headingNumbers(line) : [];
 }
 
-// The option letters the set prints. An option is a letter or Roman numeral
-// standing at the head of its line, set off from the option itself — by a tab, by
-// two or more spaces, or by punctuation. A single space is deliberately not
-// enough: a note beginning "A greater supply of ..." is not an option A.
+// The option letters the set prints: a letter/Roman numeral at the head of a
+// line, set off by tab, two-plus spaces or punctuation. A single space is not
+// enough — "A greater supply of ..." is not option A.
 const OPTION_LINE = /^\(?([A-J]|[ivx]{1,4})\)?(?:[.):]|\t| {2,})\s*\S/i;
 
 function sourceOptionKeys(set: string): Set<string> {

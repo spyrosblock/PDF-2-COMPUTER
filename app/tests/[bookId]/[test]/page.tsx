@@ -15,10 +15,8 @@ const SKILL_DURATIONS: Record<Skill, string> = {
   Speaking: "",
 };
 
-// The hub for one test: each skill (Listening / Reading / Writing) is its own
-// page with its own timer, so this page just links out to them. Skills missing
-// from the uploaded book are shown but disabled. The book is loaded from
-// IndexedDB by the id in the URL, so this page refreshes and deep-links cleanly.
+// The hub for one test: links out to each skill's own page (each with its own
+// timer). Skills missing from the book are shown but disabled.
 export default function TestPage() {
   const params = useParams<{ bookId: string; test: string }>();
   const testNum = Number(params.test);

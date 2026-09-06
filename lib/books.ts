@@ -1,14 +1,8 @@
 "use client";
 
-// Persistent store for uploaded books. Each book is one PDF the student
-// uploaded, split into its TestSkills (a book holds up to 4 practice tests). The
-// split happens entirely in the browser (see lib/pdf), and the result is kept in
-// IndexedDB so it survives reloads and browser restarts — and so a student can
-// keep several books around, revisit them, and delete the ones they no longer
-// want.
-//
-// This replaces the earlier sessionStorage bridge, which held a single book for
-// the lifetime of one tab.
+// Persistent store for uploaded books: each PDF is split into its TestSkills
+// in the browser (see lib/pdf) and kept in IndexedDB, so it survives reloads
+// and the student can keep several books around.
 
 import { useCallback, useEffect, useState } from "react";
 import type { TestSkill } from "./pdf";
@@ -17,12 +11,10 @@ const DB_NAME = "p2c";
 const DB_VERSION = 1;
 const STORE = "books";
 
-// Broadcast on the window after any write so open list views re-read. Kept
-// in-tab only — cross-tab sync isn't needed for a single-student tool.
+// Broadcast after any write so open list views re-read (in-tab only).
 const CHANGED_EVENT = "p2c:books-changed";
 
-// Lightweight description of a stored book — everything the library view needs
-// without pulling each book's (potentially large) extracted text into memory.
+// Book summary for the library view, without the large extracted text.
 export type BookMeta = {
   id: string;
   name: string; // the uploaded file's name
@@ -48,8 +40,7 @@ function openDB(): Promise<IDBDatabase> {
   });
 }
 
-// Resolves once the transaction commits (oncomplete), not merely once the
-// request succeeds — so callers know the write is durable before navigating.
+// Resolves on transaction commit, so callers know the write is durable.
 function tx<T>(
   mode: IDBTransactionMode,
   run: (store: IDBObjectStore) => IDBRequest<T>,
@@ -83,8 +74,7 @@ function distinctTests(skills: TestSkill[]): number[] {
   return [...new Set(skills.map((s) => s.test))].sort((a, b) => a - b);
 }
 
-// Persist a freshly split book and return its generated id. The caller can then
-// navigate straight to /tests/<id>.
+// Persist a freshly split book and return its generated id.
 export async function saveBook(
   name: string,
   skills: TestSkill[],
@@ -120,8 +110,7 @@ export async function deleteBook(id: string): Promise<void> {
   window.dispatchEvent(new Event(CHANGED_EVENT));
 }
 
-// Library hook: the list of stored books (null while first loading), kept in
-// sync with saves/deletes via the change event.
+// Library hook: stored books (null while loading), synced via the change event.
 export function useBooks(): { books: BookMeta[] | null; reload: () => void } {
   const [books, setBooks] = useState<BookMeta[] | null>(null);
   const reload = useCallback(() => {
@@ -137,9 +126,8 @@ export function useBooks(): { books: BookMeta[] | null; reload: () => void } {
   return { books, reload };
 }
 
-// Single-book hook for the test-selection and test pages. `loading` starts true
-// so pages can hold their empty/not-found state until IndexedDB answers, avoiding
-// a flash of "nothing here" before the read resolves.
+// Single-book hook. `loading` starts true so pages hold their empty state
+// until IndexedDB answers.
 export function useBook(id: string | null): {
   loading: boolean;
   book: StoredBook | null;
@@ -149,9 +137,8 @@ export function useBook(id: string | null): {
     book: StoredBook | null;
   }>({ loading: !!id, book: null });
 
-  // When the requested id changes, reset to "loading" during render (the React
-  // way to derive state from a changed prop) rather than in the effect below, so
-  // the async fetch is the only thing the effect does.
+  // Reset to "loading" during render when the requested id changes, so the
+  // effect only does the async fetch.
   const [trackedId, setTrackedId] = useState(id);
   if (id !== trackedId) {
     setTrackedId(id);

@@ -1,17 +1,9 @@
 "use client";
 
-// Per-skill stopwatch, persisted so it survives reloads and browser restarts.
-//
-// Each Listening/Reading/Writing page has its own timer that the student starts
-// and stops themselves. We store the accumulated (paused) time plus, when
-// running, the epoch timestamp of the current run — so the elapsed time is
-// always derivable and a timer left running keeps counting even across a reload.
-//
-// localStorage (synchronous) is used rather than the IndexedDB book store: these
-// are tiny values written on every start/stop. It's read through
-// useSyncExternalStore so the value is hydration-safe (server renders 00:00, the
-// client swaps in the stored value) and so all tabs/pages sharing a key stay in
-// sync.
+// Per-skill stopwatch backed by localStorage. Stores accumulated time plus the
+// epoch timestamp of the current run, so a running timer keeps counting across a
+// reload. Read through useSyncExternalStore: hydration-safe and in sync across
+// pages sharing a key.
 
 import { useCallback, useEffect, useState, useSyncExternalStore } from "react";
 
@@ -25,8 +17,7 @@ export type TimerState = {
 
 const ZERO: TimerState = { elapsedMs: 0, running: false, lastStartedAt: 0 };
 const PREFIX = "p2c:timer:";
-// Dispatched after a same-tab write so useSyncExternalStore subscribers re-read
-// (the native "storage" event only fires in *other* tabs).
+// Dispatched after a same-tab write ("storage" only fires in other tabs).
 const CHANGED_EVENT = "p2c:timer-changed";
 
 function keyFor(bookId: string, test: number, skill: string): string {
@@ -56,9 +47,8 @@ function parse(raw: string | null): TimerState {
   }
 }
 
-// getSnapshot must return a referentially stable value while the underlying data
-// is unchanged, or useSyncExternalStore loops forever. Cache the parsed object
-// per key and only rebuild it when the raw string actually changes.
+// getSnapshot must be referentially stable: cache per key, rebuild only when
+// the raw string changes.
 const cache = new Map<string, { raw: string | null; value: TimerState }>();
 
 function getSnapshot(key: string): TimerState {
@@ -75,8 +65,7 @@ function commit(key: string, value: TimerState): void {
   try {
     localStorage.setItem(key, raw);
   } catch {
-    // Storage full or unavailable (private mode): the timer still works for the
-    // session via the cache below, it just won't persist.
+    // Storage unavailable: works for the session via the cache, just won't persist.
   }
   cache.set(key, { raw, value });
   window.dispatchEvent(new CustomEvent(CHANGED_EVENT, { detail: key }));
@@ -134,8 +123,7 @@ export function useSkillTimer(
     () => ZERO, // server snapshot: 00:00, stopped
   );
 
-  // While running, re-render a few times a second so the display advances. setNow
-  // runs only inside the interval callback, never synchronously in the effect.
+  // While running, tick a few times a second so the display advances.
   const [now, setNow] = useState(0);
   useEffect(() => {
     if (!state.running) return;

@@ -1,12 +1,10 @@
-// The test skills and how they map to URL slugs. Each skill lives on its own
-// page (/tests/<book>/<test>/<skill>), so both the test hub and the skill pages
-// share this list and the slug <-> Skill conversion from here.
+// The test skills and their URL slug mapping (/tests/<book>/<test>/<skill>),
+// shared by the test hub and the skill pages.
 
 import type { Skill } from "./pdf";
 
-// Skills a student can take, in the order the books print them. Speaking is
-// split out of the book too (see lib/pdf) but is intentionally not offered as a
-// timed skill here.
+// Skills a student can take, in book order. Speaking is extracted too but
+// intentionally not offered as a timed skill.
 export const OFFERED_SKILLS: Skill[] = ["Listening", "Reading", "Writing"];
 
 // URLs are lowercase ("reading"); the stored data and UI use the capitalised

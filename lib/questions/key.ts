@@ -1,30 +1,17 @@
-// The book's own answers, as something a student's sheet can be marked against.
-//
-// lib/pdf/answers.ts peels the answer key off the end of each Listening and
-// Reading skill and keeps it as the page it is printed on: "1 B", "7 (the) blue
-// whale", "23 & 24 IN EITHER ORDER B E", wrapped in running headers and followed
-// by whatever else the book prints back there. That is enough to show a student,
-// and no use at all for marking — it is text, and the thing it has to be compared
-// against is a Record<question number, what the student typed> (lib/answers.ts).
-//
-// This is that key named: one entry per numbered box, carrying every form of the
-// answer the book allows. The reading of it is the model's (lib/claude/answers.ts);
-// everything here is the shape it comes back in, the coercion of that reply, and
-// the marking itself — which is pure, so it runs equally on the server and in the
-// page that shows a student their score.
+// The book's answers, as something a student's sheet can be marked against: one
+// entry per numbered box, carrying every form of the answer the book allows.
+// Reading it is the model's job (lib/claude/answers.ts); this is the reply's
+// shape, its coercion, and the pure marking logic.
 
 // One numbered box of the key.
 export type KeyAnswer = {
   n: number; // the printed question number, 1..40
   printed: string; // the answer exactly as the book prints it, e.g. "(the) blue whale"
-  // Every form that is to be counted right, written out in full: the optional
-  // words of "(the) blue whale" both kept and dropped, the alternatives of
-  // "car park OR parking lot" one per entry. Marking is a comparison against
-  // this list and nothing cleverer, so anything the book allows has to be in it.
+  // Every form that counts as right, written out in full — marking is a plain
+  // comparison against this list.
   accept: string[];
-  // The numbers this answer shares a pool with, when the book prints them as one
-  // unordered set ("23 & 24 IN EITHER ORDER"). Every number of such a set carries
-  // the same `accept` list and the same `group`; absent for an ordinary question.
+  // The numbers sharing one unordered pool ("23 & 24 IN EITHER ORDER"); same
+  // `accept` and `group` for every member. Absent for an ordinary question.
   group?: number[];
 };
 
@@ -51,12 +38,9 @@ export type Marking = {
   total: number; // boxes the key has
 };
 
-// How an answer is compared. IELTS marks spelling, so this stays deliberately
-// close to the letter: case and surrounding punctuation are the examiner's to
-// ignore, and a hyphen where the book prints a space (or the other way round) is
-// not what the question was testing. Nothing else is forgiven — no stemming, no
-// synonyms, no articles quietly added or dropped. Those the book itself allows,
-// and where it does they are written out in `accept`.
+// How an answer is compared. IELTS marks spelling, so only case, punctuation
+// and hyphen-vs-space are forgiven — no stemming, no synonyms. Anything else
+// the book allows is written out in `accept`.
 export function normalizeAnswer(value: string): string {
   return value
     .toLowerCase()
@@ -81,9 +65,8 @@ function num(value: unknown): number | null {
     : null;
 }
 
-// The accepted forms, cleaned: strings only, blanks dropped, duplicates (once
-// normalized) collapsed. A model that answers "accept": "B" rather than ["B"] is
-// taken at its word rather than dropped.
+// The accepted forms, cleaned: blanks dropped, duplicates collapsed. A bare
+// string reply is taken as one form.
 function accepted(value: unknown, printed: string): string[] {
   const raw = Array.isArray(value) ? value : [value];
   const out: string[] = [];
@@ -110,13 +93,8 @@ function group(value: unknown, n: number): number[] | undefined {
   return numbers.length > 1 ? numbers : undefined;
 }
 
-// Read the model's JSON reply into an AnswerKey.
-//
-// Like lib/questions/parse.ts this coerces rather than asserts: half a key marks
-// half a paper, which is worth more to the student than nothing. An entry is
-// dropped only when it has no usable question number or nothing to compare
-// against, and a number the reply gives twice keeps its first (printed order)
-// reading — a key that repeats itself is a misread, not two answers.
+// Read the model's JSON reply into an AnswerKey. Coerces rather than asserts —
+// half a key marks half a paper. Duplicate numbers keep their first reading.
 export function parseAnswerKey(reply: unknown): AnswerKey {
   const raw = reply && typeof reply === "object" ? (reply as { answers?: unknown }) : null;
   const list = Array.isArray(raw?.answers) ? raw.answers : [];
@@ -143,11 +121,9 @@ export function parseAnswerKey(reply: unknown): AnswerKey {
   return key.sort((a, b) => a.n - b.n);
 }
 
-// The numbers between the key's first and last that it never gives an answer
-// for. A key read off the page should have none: the books number their answers
-// straight through 1-40, so a hole is a line the model skipped rather than a
-// question the book forgot. Used to decide whether a key is worth asking for
-// again (lib/claude/steps.ts).
+// The numbers between the key's first and last with no answer. The books number
+// straight through 1-40, so a hole is a line the model skipped. Used to decide
+// whether a key is worth retrying (lib/claude/steps.ts).
 export function keyGaps(key: AnswerKey): number[] {
   if (key.length === 0) return [];
   const have = new Set(key.map((a) => a.n));
@@ -158,10 +134,8 @@ export function keyGaps(key: AnswerKey): number[] {
   return missing;
 }
 
-// The one-word verdicts a True/False/Not Given (or Yes/No/Not Given) box takes,
-// mapped to what they mean. The books print TRUE / FALSE / NOT GIVEN and
-// YES / NO / NOT GIVEN; a student sitting the paper types T, NG, Not Given —
-// and all the spellings of a verdict mean the same thing.
+// The verdict spellings a True/False/Not Given box takes, mapped to what they
+// mean — "T", "NG" and "Not Given" all mean the same.
 const VERDICTS: Record<string, string> = {
   true: "true",
   t: "true",
@@ -177,18 +151,13 @@ const VERDICTS: Record<string, string> = {
   n: "no",
 };
 
-// The verdict an answer is, when it is one; null when it is anything else. Only
-// a whole answer that is exactly a verdict word counts, so a key of "(the) tea"
-// is never matched by a student's "t" — a completion answer isn't a verdict.
+// The verdict an answer is, when it is one; null otherwise. Only a whole answer
+// counts, so "t" never matches "(the) tea".
 function verdictOf(value: string): string | null {
   return VERDICTS[normalizeAnswer(value)] ?? null;
 }
 
-// Whether one answer matches one entry of the key.
-//
-// Case and punctuation are already forgiven by normalizeAnswer; this adds the
-// one equivalence the verdict boxes need, so "T" is marked against "TRUE" and
-// "NG" against "Not Given" as the same answer.
+// Whether one answer matches one key entry (adding the verdict equivalence).
 function matches(given: string, entry: KeyAnswer): string | null {
   const wrote = normalizeAnswer(given);
   if (!wrote) return null;
@@ -204,14 +173,8 @@ function matches(given: string, entry: KeyAnswer): string | null {
   return null;
 }
 
-// Mark a sheet against the key.
-//
-// Ordinary boxes are a lookup. The unordered sets the books print — "23 & 24 IN
-// EITHER ORDER: B, E" — are marked as a pool instead: either number may hold
-// either answer, and each answer counts once, so a student who writes B in both
-// boxes has one right rather than two. The pool is consumed in printed order,
-// which for a set of letters (what these sets always are in practice) is the same
-// as consuming it optimally.
+// Mark a sheet against the key. Unordered sets ("23 & 24 IN EITHER ORDER") are
+// marked as a pool: either number may hold either answer, each counting once.
 export function markSheet(key: AnswerKey, sheet: Sheet): Marking {
   const used = new Map<string, Set<string>>(); // group key -> forms already counted
 

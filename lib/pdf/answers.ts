@@ -1,30 +1,18 @@
-// Splitting a skill's answer key off from its passages/questions.
-//
-// The Cambridge books print the correct answers for each Listening and Reading
-// skill on their own page at the *end* of that skill — a page whose first line
-// is essentially "Answer 1" / "Answer: 1", followed by the numbered answers.
-// That page must not stay with the questions: showing it beside them would give
-// the answers away, and (before parts are detected) it would otherwise be swept
-// into the last part. So we slice it — and everything after it — off the skill's
-// pages and keep it separately as the skill's answer key.
-//
-// Like split.ts, parts.ts and format.ts, this is pure string logic over the
-// "----- Page N (source) -----" marker format slicePages emits, so it can be
-// exercised in isolation with plain fixtures.
+// Finding each skill's answer key. Books print one of two ways: at the end of
+// each Listening/Reading skill (splitOffAnswers, which slices it — and
+// everything after — off so it isn't swept into the last part), or as one
+// back-of-book section covering all four tests (splitBookAnswers). Pure string
+// logic over the marker format, like split.ts/parts.ts/format.ts.
 
-import type { TestSkill } from "./types";
+import type { PageResult, Skill, TestSkill } from "./types";
 
 // The page-boundary line slicePages writes: "----- Page 12 (text) -----".
 const PAGE_MARKER = /^----- Page (\d+) \((text|ocr|empty)\) -----$/;
 
-// The answer-key marker: the word "answer(s)" immediately followed by the number
-// 1 ("Answer 1", "Answer: 1", "Answers 1" — the colon and spacing are optional).
-// Deliberately NOT anchored to the line start: the Cambridge pages carry a
-// running header/footer ("…Student's Book with Answers with Audio") that
-// extract.ts folds onto the same visual line, so the real "Answer: 1" is usually
-// preceded by that boilerplate rather than opening the line. The trailing "1"
-// keeps it from matching the bare "Answers" in that boilerplate, and from
-// matching a mid-key "2"/"3"… line, so only the page that *opens* the key hits.
+// The answer-key marker: "answer(s)" followed by "1". Not anchored to the line
+// start, since a running-header boilerplate ("…with Answers with Audio") is
+// folded onto the same line. The trailing "1" keeps it from matching that bare
+// boilerplate or a mid-key "2"/"3"… line, so only the key's opening page hits.
 const ANSWER_MARKER = /answers?\s*:?\s*1\b/i;
 
 type PseudoPage = { page: number; source: string; lines: string[] };
@@ -44,13 +32,10 @@ function pseudoPages(raw: string): PseudoPage[] {
   return pages;
 }
 
-// Whether a page opens the answer key. Tested against the page's lines *joined*,
-// not line by line: extract.ts breaks the key's header table into separate runs,
-// so "Answer:" and the "1" it precedes often land on different raw lines (and the
-// running-header boilerplate can wedge between them). Joining first makes the
-// marker contiguous. Column separators are collapsed for the same reason. A
-// content page never matches: its only "answer" is the boilerplate "…with
-// Answers with Audio", which is never followed by a "1".
+// Whether a page opens the answer key. Tested against the page's lines *joined*
+// (column separators collapsed): "Answer:" and its "1" often land on different
+// raw lines. Content pages never match — their only "answer" is the boilerplate,
+// never followed by a "1".
 function pageBeginsAnswers(lines: string[]): boolean {
   const joined = lines.join(" ").replace(/\s*\|\s*/g, " ");
   return ANSWER_MARKER.test(joined);
@@ -77,14 +62,11 @@ function sliceText(pages: PseudoPage[]): string {
     .join("\n\n");
 }
 
-// Split a skill into its passages/questions (`content`) and its answer key
-// (`answers`, raw marker text — or null if the book carried none). The answer
-// key is taken to start at the first page carrying an "Answer 1" marker, and to
-// run to the end of the skill; the boilerplate printed before that marker on the
-// opening page is trimmed away. `content` is the same skill with those pages
-// removed and its endPage pulled back accordingly. If no answer page is found —
-// or it is the skill's very first page, leaving no content — the whole skill is
-// returned as content and answers is null.
+// Split a skill into `content` and its answer key (`answers`, raw marker text —
+// or null). The key starts at the first "Answer 1" page and runs to the end;
+// the boilerplate before the marker is trimmed. If no answer page is found —
+// or it is the skill's first page — the whole skill is content and answers
+// is null.
 export function splitOffAnswers(skill: TestSkill): {
   content: TestSkill;
   answers: string | null;
@@ -95,8 +77,7 @@ export function splitOffAnswers(skill: TestSkill): {
   if (at <= 0) return { content: skill, answers: null };
 
   const contentPages = pages.slice(0, at);
-  // Trim the pre-marker boilerplate off the page that opens the key; later answer
-  // pages (numbers only, no marker) are left untouched.
+  // Trim the pre-marker boilerplate off the key's opening page only.
   const answerPages = pages
     .slice(at)
     .map((p, i) => (i === 0 ? { ...p, lines: trimToMarker(p.lines) } : p));
@@ -108,4 +89,122 @@ export function splitOffAnswers(skill: TestSkill): {
     },
     answers: sliceText(answerPages),
   };
+}
+
+// ---------------------------------------------------------------------------
+// The other place a key is printed: one back-of-book section.
+//
+// Cambridge 19 (and 14) don't put a key at the end of each skill. They print a
+// single "Listening and Reading answer keys" section after the audio scripts —
+// a page per test and skill, each carrying that phrase as its running header.
+// Those pages sit past the audio-scripts cut, so splitIntoSkills never sees
+// them and splitOffAnswers above finds nothing inside any skill's own range.
+// So we scan the whole book for the section separately and hand each page back
+// to the skill it belongs to.
+
+// The two skills a key covers — the printed section's own scope, and the only
+// skills lib/analyze marks.
+type KeySkill = Extract<Skill, "Listening" | "Reading">;
+
+// The running header every page of the section carries. Matched as a whole
+// line, with room for the page number printed beside it — the Introduction
+// mentions the same phrase mid-sentence, and that page sits right against a
+// test's opening page.
+const KEY_SECTION_MARKER =
+  /^(?:\d{1,3}\s+)?listening\s+and\s+reading\s+answer\s*keys?\b.{0,6}$/i;
+
+// "TEST 1" as a heading-like line. A short tail is allowed so the Contents
+// line ("Test 1   10") still matches — it names all four tests, which is how
+// that page is recognised as *not* a key page.
+const KEY_TEST_HEADING = /^test\s*([1-4])\b.{0,12}$/i;
+
+// "LISTENING" / "READING" as a heading-like line. Strict on purpose: the
+// running header above starts with "Listening" too, and must not read as a
+// Listening heading on the Reading page.
+const KEY_SKILL_HEADING =
+  /^(?:test\s*[1-4]\s+)?(listening|reading)(?:\s+answers?(?:\s+key)?)?$/i;
+
+// Collapse the column separators format.ts recognises, so a heading that was
+// laid out in columns still reads as one line.
+function collapse(line: string): string {
+  return line.replace(/\s*\|\s*/g, " ").trim();
+}
+
+// Which test and skill a page of the section opens, from its headings. The
+// test is null when the page names several (the Contents page), so such a page
+// never starts a key.
+function keyPageHeadings(lines: string[]): {
+  test: number | null;
+  skill: KeySkill | null;
+} {
+  const tests = new Set<number>();
+  let skill: KeySkill | null = null;
+  for (const raw of lines) {
+    const line = collapse(raw);
+    const t = KEY_TEST_HEADING.exec(line);
+    if (t) tests.add(Number(t[1]));
+    const s = KEY_SKILL_HEADING.exec(line);
+    if (s && !skill) {
+      const word = s[1].toLowerCase();
+      skill = word === "listening" ? "Listening" : "Reading";
+    }
+  }
+  return { test: tests.size === 1 ? [...tests][0] : null, skill };
+}
+
+// A page belongs to the key section if it carries the running header, or looks
+// like one of its pages (a single test and a skill heading). Either is enough:
+// OCR loses the header on the section's opening page (its display-size title),
+// and a continuation page has the header but no headings of its own.
+type MarkedPage = {
+  page: PageResult;
+  lines: string[];
+  marker: boolean;
+  test: number | null;
+  skill: KeySkill | null;
+};
+
+function inSection(p: MarkedPage): boolean {
+  return p.marker || (p.test !== null && p.skill !== null);
+}
+
+// Find the back-of-book key section and split it per skill, keyed "1:Reading"
+// (test number, then skill name). The section is the run of consecutive
+// belonging pages that carries the running header at least once — which is
+// what keeps a test's own Listening opening page (a single test and a skill
+// heading, but no header anywhere near it) out. Inside the run, a page naming
+// a test and a skill opens that skill's key and the pages after it continue it.
+// Books that print per-skill keys instead (or none) yield an empty map.
+export function splitBookAnswers(pages: PageResult[]): Map<string, string> {
+  const marked: MarkedPage[] = pages.map((page) => {
+    const lines = page.text.split("\n");
+    return {
+      page,
+      lines,
+      marker: lines.some((line) => KEY_SECTION_MARKER.test(collapse(line))),
+      ...keyPageHeadings(lines),
+    };
+  });
+
+  const buckets = new Map<string, PseudoPage[]>();
+
+  for (let i = 0; i < marked.length; i++) {
+    if (!inSection(marked[i])) continue;
+    let end = i;
+    while (end + 1 < marked.length && inSection(marked[end + 1])) end++;
+    const run = marked.slice(i, end + 1);
+    i = end;
+    if (!run.some((p) => p.marker)) continue;
+
+    let current: string | null = null;
+    for (const p of run) {
+      if (p.test && p.skill) current = `${p.test}:${p.skill}`;
+      if (!current) continue;
+      const bucket = buckets.get(current) ?? [];
+      bucket.push({ page: p.page.page, source: p.page.source, lines: p.lines });
+      buckets.set(current, bucket);
+    }
+  }
+
+  return new Map([...buckets].map(([key, pgs]) => [key, sliceText(pgs)]));
 }

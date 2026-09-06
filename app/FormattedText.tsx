@@ -1,9 +1,6 @@
-// Renders cleaned skill/part text (see lib/pdf/format.ts) as readable prose.
-//
-// The stored text uses "\n\n" between paragraphs; we split on that and emit a
-// <p> per paragraph inside a scrollable box. Replaces the old monospace <pre>
-// dump. Older books saved before formatting existed have no "\n\n" structure,
-// so they render as a single block — functional, if not pretty, until re-upload.
+// Renders cleaned skill/part text (lib/pdf/format.ts) as prose: a <p> per
+// "\n\n"-separated paragraph. Books saved before formatting existed render as
+// a single block until re-upload.
 export function FormattedText({ text }: { text: string }) {
   const paragraphs = text.split(/\n{2,}/).filter((p) => p.trim().length > 0);
 

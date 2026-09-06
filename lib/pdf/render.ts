@@ -1,27 +1,14 @@
-// Rasterising selected PDF pages to images.
-//
-// Three callers need a printed page as a picture rather than as text:
-//  - Writing Task 1 is a chart / graph / map / diagram the student must describe
-//    — visual content the text layer can't carry — so we keep the whole page as
-//    an image and show it beneath the extracted prompt (attachWritingImages).
-//  - Question extraction falls back to page images whenever the API says the
-//    questions text is too garbled to read (lib/analyze).
-//  - A question set answered against a map, plan or diagram needs that picture
-//    shown beside it, cropped out of its page (lib/analyze/figures.ts) — hence
-//    the optional crop box.
-//
-// The splits (parts.ts) are pure text logic with no access to the PDF document,
-// so all three are second passes over the file: openPdf re-opens it,
-// renderPageImage draws the pages that are actually wanted, and the result is a
-// JPEG data URL — small enough to sit in IndexedDB, or to post to our API routes.
+// Rasterising selected PDF pages to JPEG data URLs (small enough for IndexedDB
+// or an API post). Callers: Writing Task 1's chart page (attachWritingImages),
+// question extraction's page-image fallback (lib/analyze), and cropped figures
+// (lib/analyze/figures.ts). These are second passes over the file, since the
+// splits in parts.ts are pure text logic.
 
-import { getPdfjs } from "./pdfjs";
+import { loadPdf } from "./pdfjs";
 import type { PDFDocumentProxy } from "pdfjs-dist";
 import type { TestSkill } from "./types";
 
-// 2× so the rendered page is crisp on high-DPI screens (and legible to the API
-// when it reads a page itself); JPEG keeps the data URL small — a page as PNG is
-// several MB, far too heavy for IndexedDB.
+// 2× for high-DPI screens and API legibility; JPEG keeps the data URL small.
 const RENDER_SCALE = 2;
 const JPEG_QUALITY = 0.85;
 
@@ -36,15 +23,12 @@ export type OpenPdf = {
 // Open a PDF for rendering. The caller must close() when done, or the worker and
 // its buffer stay alive.
 export async function openPdf(file: File): Promise<OpenPdf> {
-  const pdfjs = await getPdfjs();
-  const buffer = await file.arrayBuffer();
-  const loadingTask = pdfjs.getDocument({ data: buffer });
+  const loadingTask = await loadPdf(await file.arrayBuffer());
   const doc = await loadingTask.promise;
   return { doc, close: () => loadingTask.destroy() };
 }
 
-// A rectangle of a page, as fractions of its width and height measured from the
-// top-left corner. What the API hands back when it locates a figure.
+// A page rectangle as width/height fractions from the top-left corner.
 export type CropBox = {
   left: number;
   top: number;
@@ -52,9 +36,8 @@ export type CropBox = {
   bottom: number;
 };
 
-// Cut `box` out of a rendered page. Sizes are rounded outward and clamped to the
-// canvas, so a box touching an edge keeps the edge rather than losing a pixel of
-// it. A box that rounds away to nothing gives back the page whole.
+// Cut `box` out of a rendered page, clamped to the canvas. A degenerate box
+// gives back the page whole.
 function crop(canvas: HTMLCanvasElement, box: CropBox): HTMLCanvasElement {
   const left = Math.max(0, Math.floor(box.left * canvas.width));
   const top = Math.max(0, Math.floor(box.top * canvas.height));
@@ -71,10 +54,9 @@ function crop(canvas: HTMLCanvasElement, box: CropBox): HTMLCanvasElement {
   return out;
 }
 
-// Render one page to a canvas and return it as a JPEG data URL — the whole page,
-// or just `box` of it. The page is always drawn whole and then cut down, because
-// the crop is a fraction of the rendered page rather than of the PDF's own
-// coordinate space (which the API, looking at the rendered image, never sees).
+// Render one page to a JPEG data URL — whole, or just `box` of it. The page is
+// drawn whole and then cropped, since the box is a fraction of the rendered
+// page, not of the PDF's coordinate space.
 export async function renderPageImage(
   doc: PDFDocumentProxy,
   pageNum: number,
@@ -93,10 +75,9 @@ export async function renderPageImage(
   return (box ? crop(canvas, box) : canvas).toDataURL("image/jpeg", JPEG_QUALITY);
 }
 
-// Attach a full-page image to every Writing Task 1 part. Returns the skills with
-// Task 1 parts carrying `images` (one data URL per page in the task's range);
-// every other skill and part is returned unchanged. If no Task 1 part is present
-// the PDF is never re-opened.
+// Attach a full-page image to every Writing Task 1 part (one data URL per page
+// in the task's range). Other skills/parts unchanged; the PDF is only opened
+// when a Task 1 part exists.
 export async function attachWritingImages(
   file: File,
   skills: TestSkill[],

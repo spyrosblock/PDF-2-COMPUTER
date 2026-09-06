@@ -1,21 +1,10 @@
-// Finding the picture a question set is answered against.
-//
-// Some question sets cannot be read at all: Listening Part 2 prints a map of a
-// park or a plan of a building and asks the student to write letters onto it, and
-// a reading passage sometimes ends with a labelled diagram. The picture carries
-// the answers, and no amount of text extraction recovers it — it was never text.
-// So the student is given the picture itself, rendered from the PDF.
-//
-// Which leaves the question of how much of the page to give them. The whole page
-// always works and is what we fall back to, but it drags the instructions and the
-// numbered list along with it, printed twice over once the questions are laid out
-// beside it. So we ask the model, which is already looking at the page image, for
-// the picture's bounding box, and crop to it (lib/pdf/render.ts). A box we can't
-// believe is simply dropped and the whole page shown instead — a slightly clumsy
-// page beats a crop with half the map missing.
+// Finding the picture a question set is answered against (a Listening Part 2
+// map, a labelled reading diagram). The model, already looking at the page
+// image, gives the picture's bounding box; we crop to it (lib/pdf/render.ts).
+// An unbelievable box is dropped and the whole page shown — a clumsy page beats
+// a crop with half the map missing.
 
-// The box, as fractions of the page's width and height from its top-left corner.
-// The model answers in percentages; this is what the crop wants.
+// The box as width/height fractions (the model answers in percentages).
 export type FigureBox = {
   left: number;
   top: number;
@@ -53,14 +42,12 @@ The four numbers are percentages of the page: "left" and "right" measured across
 Output the JSON object and nothing else — no preamble, no commentary, no markdown fences.`;
 }
 
-// A box has to be worth cropping to: right way round, big enough to be the
-// picture rather than a stray label, and small enough to be a crop rather than
-// the page. Anything else is read as "show the whole page".
+// A box must be big enough to be the picture and small enough to be a crop;
+// anything else means "show the whole page".
 const MIN_SIDE = 0.1;
 const MAX_AREA = 0.92;
 
-// The crop is grown a little on every side, because a box that is slightly too
-// tight loses a marker at the edge — the one thing the picture is there for.
+// The crop is grown a little on every side — a too-tight box loses an edge marker.
 const PADDING = 0.02;
 
 function fraction(value: unknown): number | null {
@@ -96,9 +83,8 @@ function box(value: unknown): FigureBox | null {
   return padded;
 }
 
-// Read the model's reply. `null` means it found no picture on this page; a
-// FigureFound with a null box means it found one but we couldn't use its
-// rectangle, so the whole page stands in.
+// Read the model's reply. `null` = no picture found; a null box = found but
+// unusable rectangle, so the whole page stands in.
 export function parseFigure(reply: {
   found?: unknown;
   box?: unknown;
@@ -107,8 +93,7 @@ export function parseFigure(reply: {
   if (reply.found === false || reply.found === "false") return null;
   const found = box(reply.box);
   const alt = typeof reply.alt === "string" ? reply.alt.trim() : "";
-  // A reply with neither a usable box nor a "found" of any kind is no answer at
-  // all — treated as "nothing here" rather than as a whole-page figure.
+  // No usable box and no "found": treat as "nothing here".
   if (!found && reply.found === undefined) return null;
   return { box: found, alt };
 }

@@ -1,29 +1,15 @@
-// The prompt that turns a part's extracted question text into question groups.
-//
-// The extraction step (reading.ts, listening.ts) gets the questions out of the
-// PDF word for word, but as one flat run of text: the heading, the instructions,
-// the box of headings and the numbered questions all arrive as undifferentiated
-// lines. A student can read it, but it does not look like the page they will sit
-// the exam on, and nothing in it can be answered or marked.
-//
-// This step names the structure that was already printed there: where each set
-// starts, which type it is, which lines are its instructions, which list its
-// questions all draw on, and where each gap falls. It is a re-description, not a
-// rewrite — see the fidelity rule below, which is the part of this prompt that
-// matters most. Reworded IELTS questions look fine and quietly stop matching the
-// book's answer key.
-//
-// Reading and listening share it, because a question set is built the same way in
-// both; only the type list and the words for where the answers come from differ.
-// The reply is JSON, read by lib/questions/parse.ts into QuestionGroup[].
+// The prompt that turns extracted question text into structured question
+// groups. A re-description of the printed structure, not a rewrite — the
+// fidelity rule below matters most, since reworded questions quietly stop
+// matching the book's answer key. Shared by reading and listening; only the
+// type list and answer-source wording differ. The JSON reply is parsed by
+// lib/questions/parse.ts.
 
 import { QUESTION_TYPES } from "@/lib/questions";
 import type { QuestionSkill } from "./shared";
 
-// Everything about the prompt that turns on which skill's questions these are.
-// The type list is the real difference: True/False/Not Given, matching headings
-// and matching information are reading's alone, and a model given the whole list
-// for a listening set has reached for them.
+// Per-skill prompt wording. The type list is the real difference: reading-only
+// types must not be offered to a listening set.
 type SkillWording = {
   test: string; // "IELTS Academic Reading test"
   source: string; // where the answers come from: "the passage" / "the recording"
@@ -99,8 +85,7 @@ ${skill.extra}`;
 
 const GAP_RULE = `Every gap a student types into is written as [[n]], where n is the number printed against it: "In [[14]] the first bridge was built." A gap with no number is [[]]. The printed run of dots or the printed blank line is replaced by this token and never reproduced — but the gap's number is kept, since a student answers by number.`;
 
-// The fidelity rule. This is the whole point of the step being a re-description:
-// the model is being handed text it could easily improve, and must not.
+// The fidelity rule: the model is handed text it could easily improve, and must not.
 const FIDELITY_RULE = `Copy the words. Every string you output is text printed in the book, copied exactly:
 - Never reword a question, an option or an instruction, not even to fix awkward phrasing or a grammatical slip in the original.
 - Never renumber. Keep each printed question number, even if the set starts at 14 or the numbering skips.

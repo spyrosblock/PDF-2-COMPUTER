@@ -4,14 +4,12 @@ import { useState } from "react";
 import Link from "next/link";
 import { useBooks, deleteBook, type BookMeta } from "@/lib/books";
 
-// Library of saved books. Every PDF a student uploads is kept in IndexedDB, so
-// this lists them all — newest first — and lets the student open one or delete
-// it. A direct visit with nothing stored yet drops to an "upload first" state.
+// Library of saved books, newest first: open or delete one. Nothing stored yet
+// drops to an "upload first" state.
 export default function LibraryPage() {
   const { books } = useBooks();
 
-  // Loading (books === null) and empty render the same simple prompt; the list
-  // only appears once we actually have entries.
+  // Loading (books === null) and empty render the same simple prompt.
   if (!books || books.length === 0) {
     return (
       <main className="mx-auto flex w-full max-w-4xl flex-1 flex-col gap-4 px-6 py-10">

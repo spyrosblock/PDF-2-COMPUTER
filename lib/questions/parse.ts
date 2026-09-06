@@ -1,14 +1,7 @@
-// Reading the model's JSON reply into QuestionGroups.
-//
-// The reply is a model's, so nothing in it is guaranteed: a field can be missing,
-// a number can arrive as "14", a list can hold a bare string where an object was
-// asked for. Everything here therefore coerces rather than asserts, and drops
-// only what it cannot make sense of — a group with a stray field is still worth
-// far more to the student than no group at all.
-//
-// The one hard rule: a group with nothing in it (no items, no body, no options)
-// is not a question set, and is dropped. If that leaves nothing, the caller keeps
-// the extracted text instead — see app/api/reading/questions/structure/route.ts.
+// Reading the model's JSON reply into QuestionGroups. Nothing in the reply is
+// guaranteed, so everything here coerces rather than asserts and drops only
+// what it can't make sense of. An empty group (no items, body or options) is
+// dropped; if that leaves nothing, the caller keeps the extracted text.
 
 import {
   QUESTION_TYPES,
@@ -33,20 +26,13 @@ function list(value: unknown): unknown[] {
   return Array.isArray(value) ? value : [];
 }
 
-// A printed run of dots or underscores is how the book draws a gap, and the model
-// is asked for a [[n]] token instead — but it sometimes copies the dots through.
-// Rather than leave a student with an ambiguous row of dots, turn any such run
-// into an unnumbered gap.
+// Printed dot/underscore runs the model copied through become unnumbered gaps.
 function gaps(text: string): string {
   return text.replace(/(?:\.\s*){4,}|_{3,}|(?:…\s*){2,}/g, "[[]]");
 }
 
-// Text as it will be shown: whitespace collapsed (the extraction's line breaks
-// mean nothing here — the structure carries the layout now), gaps normalised, and
-// the space the extraction left in front of punctuation closed up. That last one
-// is typography, not wording: the book prints "and in ......... ." because the
-// gap is a printed rule, and once the gap is a blank the stray space reads as a
-// mistake.
+// Text as it will be shown: whitespace collapsed, gaps normalised, and the
+// space before punctuation closed up (a gap is now a blank, not a printed rule).
 function text(value: unknown): string {
   return gaps(str(value).replace(/\s+/g, " "))
     .replace(/\s+([.,;:?!])/g, "$1")
@@ -172,8 +158,7 @@ function group(value: unknown): QuestionGroup | null {
   const items = list(raw.items)
     .map(item)
     .filter((i): i is Item => i !== null);
-  // `optionList` is what the prompt asks for; a model that answered with a bare
-  // `options` array meant the same thing.
+  // `optionList` is what the prompt asks for; a bare `options` array means the same.
   const loose = options(raw.options);
   const shared =
     optionList(raw.optionList) ??

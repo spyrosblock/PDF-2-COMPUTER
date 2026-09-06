@@ -1,8 +1,5 @@
-// Reading the JSON body of the routes under app/api.
-//
-// All of them take a small JSON object and answer with one, and all of them have
-// the same two ways of being called wrongly — a body that isn't JSON, and a
-// missing field. Keeping that here leaves each route as the step it runs.
+// Reading the JSON body of the routes under app/api: shared handling of the
+// two ways a request can be wrong — a body that isn't JSON, a missing field.
 
 export type Body = Record<string, unknown>;
 
@@ -28,8 +25,7 @@ export function optionalString(body: Body, name: string): string | null {
   return typeof value === "string" && value !== "" ? value : null;
 }
 
-// An optional array-of-strings field, for the instruction lines a figure request
-// carries. Anything that isn't a string is dropped rather than rejected.
+// An optional array-of-strings field. Non-strings are dropped, not rejected.
 export function stringList(body: Body, name: string): string[] {
   const value = body[name];
   return Array.isArray(value)
@@ -41,8 +37,7 @@ export function badRequest(message: string): Response {
   return Response.json({ error: message }, { status: 400 });
 }
 
-// What a step's failure looks like to the caller. The message is the upstream's
-// where there is one, since that is what tells a developer which call broke.
+// A step's failure response; the message is the upstream's where there is one.
 export function upstreamFailure(err: unknown, context: string): Response {
   console.error(`${context} failed:`, err);
   return Response.json(

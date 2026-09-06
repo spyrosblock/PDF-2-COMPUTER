@@ -4,9 +4,8 @@ import Link from "next/link";
 import { useParams } from "next/navigation";
 import { useBook } from "@/lib/books";
 
-// Test selection for one saved book: the practice tests it was split into. The
-// book is read from IndexedDB by the id in the URL, so this page refreshes and
-// deep-links cleanly.
+// Test selection for one saved book: the practice tests it was split into,
+// read from IndexedDB by the id in the URL.
 export default function TestSelectionPage() {
   const params = useParams<{ bookId: string }>();
   const { loading, book } = useBook(params.bookId);

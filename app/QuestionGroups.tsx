@@ -1,26 +1,11 @@
 "use client";
 
-// Laying a part's question sets out the way the book prints them, and letting the
-// student write in them.
-//
-// The model in lib/questions names what each line of the extracted text was: a
-// heading, an instruction, an option everyone chooses from, a numbered question,
-// a cell of a table. This renders that back — a card per set, its instructions
-// above it, its shared list boxed the way the book boxes it, its questions
-// numbered down a gutter, and each gap drawn as a blank carrying its number.
-//
-// Every numbered answer is a text field, so a paper can be sat rather than only
-// read. A completion gap is a field in the sentence, where the book prints the
-// blank. A question answered with a letter, a TRUE / FALSE / NOT GIVEN or a few
-// words of its own has no blank printed anywhere — the book expects it on a
-// separate answer sheet — so the field goes at the end of the question. Where the
-// numbers are printed on a picture instead — the map of a park, the plan of a
-// building — the fields go under the picture, numbered, in the order the set
-// claims them.
-//
-// Given an `answers` sheet the blanks become inputs; without one (the upload
-// debug view) they stay dashed lines, since there is nowhere to keep what would
-// be typed. Answers are held per book/test/skill, not per part: see lib/answers.
+// Laying a part's question sets out the way the book prints them, and letting
+// the student write in them. Every numbered answer is a text field: a completion
+// gap answers in its sentence, a letter/verdict/short answer at the end of its
+// question, and picture-printed numbers under the picture. With an `answers`
+// sheet the blanks become inputs; without one (debug view) they stay dashed
+// lines. Answers are held per book/test/skill — see lib/answers.
 
 import { createContext, Fragment, useContext, useMemo } from "react";
 import {
@@ -39,10 +24,8 @@ import {
 } from "@/lib/questions";
 import type { AnswerSheet } from "@/lib/answers";
 
-// The sheet being written into, and a name for the part being written in. Gaps
-// are keyed by their printed question number wherever there is one; the scope
-// only names the unnumbered ones, which have nothing else to be called and would
-// otherwise collide between the parts sharing a sheet.
+// The sheet being written into, and a scope naming the part — only the
+// unnumbered gaps need it, or they'd collide between parts sharing a sheet.
 type Answering = { sheet: AnswerSheet; scope: string };
 
 const AnswersContext = createContext<Answering | null>(null);
@@ -138,11 +121,8 @@ function fallbackHeading(group: QuestionGroup): string {
   return first === last ? `Question ${first}` : `Questions ${first}-${last}`;
 }
 
-// How wide an answer field is drawn, by what the set asks to be written in it: a
-// letter picked from a list needs room for a letter, TRUE / NOT GIVEN for two
-// short words, a completion gap for a phrase. It is a property of the whole set,
-// so it rides a context rather than being threaded through every block, cell and
-// option a gap can turn up in.
+// Answer field width by question type — a property of the whole set, so it
+// rides a context rather than being threaded through every block and option.
 const FieldWidthContext = createContext("w-32");
 
 const FIELD_WIDTHS: Partial<Record<QuestionType, string>> = {
@@ -172,22 +152,11 @@ function hasGap(text: string): boolean {
   return false;
 }
 
-// Where a set wants each of its answers written.
-//
-// A gap printed in the text answers itself: the blank is in the sentence, and
-// GapText draws a field in it. Every other number wants a field put somewhere for
-// it — a letter chosen from a list, a TRUE / FALSE / NOT GIVEN, the answer to a
-// short question — because the book prints those on a separate answer sheet and
-// so leaves no blank on the page at all.
-//
-// `inline` is the numbers already answerable in the set's own text, wherever they
-// sit in it. A question claiming any other number gets a field of its own (see
-// ItemView). What is left — numbers the set claims that none of its questions
-// carry — is the picture-labelling case: they are printed on the map or the plan,
-// against places the extraction kept as nothing at all, so they go under it in
-// number order. Only a set that has a picture is read that way: a set can
-// legitimately claim numbers whose questions we simply failed to extract, and
-// inventing loose fields for those would be worse than leaving them out.
+// Where a set wants each of its answers written. `inline` is the numbers
+// answerable in the set's own text. The rest: questions get fields of their own
+// (ItemView), and — for a set with a picture — unclaimed numbers go under the
+// picture in order (they're printed on the map itself; inventing loose fields
+// for unextracted questions would be worse than leaving them out).
 function answerPlan(group: QuestionGroup): {
   inline: Set<number>;
   loose: number[];
@@ -207,12 +176,10 @@ function answerPlan(group: QuestionGroup): {
   return { inline, loose: [...wanted].sort((a, b) => a - b) };
 }
 
-// The map, plan or diagram the set is answered against, printed where the book
-// prints it: under the instructions, above the questions. It is a photograph of
-// the page, so it keeps a white ground in dark mode too — inverting it would make
-// a nonsense of a map drawn in black on white. When the picture couldn't be cut
-// out of its page the whole page stands in, and the caption says so, since the
-// student is then looking at instructions and page numbers as well.
+// The map/plan/diagram the set is answered against, under the instructions and
+// above the questions. Kept on a white ground in dark mode too — inverting a
+// black-on-white map would be nonsense. When no crop was possible the whole
+// page stands in, with a caption saying so.
 function FigureView({ figure }: { figure: Figure }) {
   return (
     <figure className="flex flex-col gap-1">
@@ -231,9 +198,7 @@ function FigureView({ figure }: { figure: Figure }) {
   );
 }
 
-// The fields for labels printed on the picture rather than in the text, laid out
-// under it in number order. Nothing is written beside them but their number:
-// what each one is is drawn on the picture above.
+// Fields for labels printed on the picture, laid out under it in number order.
 function FigureAnswers({ numbers }: { numbers: number[] }) {
   const answering = useContext(AnswersContext);
   if (!answering) return null;
@@ -339,19 +304,10 @@ function BlockView({ block, path }: { block: Block; path: string }) {
   );
 }
 
-// One numbered question: its number down the gutter, then the question itself and
-// — for ordinary multiple choice, where the options belong to this question
-// alone — its own lettered options under it. A question that takes two answers
-// covers two numbered boxes and is labelled with both ("23-24"), the way the book
-// heads it "Questions 23 and 24".
-//
-// Then the field to answer it in. A completion question already has one, printed
-// as a gap in its own sentence; anything else — a letter, a TRUE / FALSE / NOT
-// GIVEN, a few words of answer, a label belonging to a map — is answered at the
-// end of the question, after the options where it has any, since the student
-// reads those before writing. The number is repeated against each field only
-// where a question takes more than one, so that it is clear which is which; a
-// single field is already named by the number down the gutter.
+// One numbered question: number down the gutter, its own options where it has
+// them, and the field(s) to answer in — a completion question already has its
+// gap; anything else is answered at the end. A multi-answer question is labelled
+// with its full range ("23-24"), and the number is repeated per field only then.
 function ItemView({
   item,
   path,
@@ -369,8 +325,7 @@ function ItemView({
         ? `${numbers[0]}-${numbers[numbers.length - 1]}`
         : String(numbers[0]);
 
-  // A gap in the question's own text is where it is answered, even when the gap
-  // came through unnumbered and so isn't in `inline`.
+  // A gap in the question's own text is where it is answered, even unnumbered.
   const fields = hasGap(item.text)
     ? []
     : numbers.filter((n) => !inline.has(n));
@@ -411,10 +366,8 @@ function ItemView({
   );
 }
 
-// Text with its gaps drawn as blanks. A gap keeps the number printed against it,
-// because that is how a student says which answer is which. `path` says where in
-// the set this run of text sits, so that a gap the book left unnumbered still has
-// a name to be stored under.
+// Text with its gaps drawn as blanks. `path` names the run of text so an
+// unnumbered gap still has a storage key.
 function GapText({ text, path }: { text: string; path: string }) {
   const parts: React.ReactNode[] = [];
   let at = 0;
@@ -444,12 +397,9 @@ function Gap({ n, path, nth }: { n: string; path: string; nth: number }) {
   return <AnswerInput id={id} n={n} />;
 }
 
-// A blank, with the question number printed small against it as the book prints
-// it. It is a field to type in when there is a sheet to keep the answer on, and a
-// dashed rule when there isn't. `prefix` is false where the number is already
-// printed beside the blank — down a question's gutter — so it isn't said twice;
-// the field is still named by it for a screen reader. How wide it is drawn is the
-// set's business, not the field's: see FieldWidthContext.
+// A blank: an input when there's a sheet to write on, a dashed rule otherwise.
+// `prefix` is false where the number is already printed beside it (the number
+// still names the field for a screen reader). Width comes from FieldWidthContext.
 function AnswerInput({
   id,
   n,
@@ -487,8 +437,7 @@ function AnswerInput({
         value={value}
         onChange={(e) => sheet.set(id, e.target.value)}
         aria-label={n ? `Answer for question ${n}` : "Answer"}
-        // It is a spelling test as much as a listening one: no autocorrect, no
-        // suggestions, no red underline offering the word back.
+        // It's a spelling test as much as a listening one.
         autoComplete="off"
         autoCorrect="off"
         autoCapitalize="off"

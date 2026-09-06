@@ -1,11 +1,8 @@
-// Client-side PDF text extraction.
-//
-// Strategy: pull the PDF's embedded text layer with pdf.js (instant + accurate).
-// Only if a page has effectively no text layer (e.g. a scanned image page) do we
-// fall back to running Tesseract OCR on a rendered image of that page. Everything
-// runs in the browser — the PDF never leaves the user's machine.
+// Client-side PDF text extraction: pdf.js text layer first, Tesseract OCR on a
+// rendered image only when a page has effectively none. Everything runs in the
+// browser — the PDF never leaves the machine.
 
-import { getPdfjs } from "./pdfjs";
+import { loadPdf } from "./pdfjs";
 import { ocrPage, terminateOcr } from "./ocr";
 import type { PageResult, Progress } from "./types";
 
@@ -13,32 +10,19 @@ import type { PageResult, Progress } from "./types";
 // is missing/insufficient and reach for OCR instead.
 const MIN_TEXT_CHARS = 8;
 
-// Reconstructing layout from text-item coordinates.
+// Layout reconstruction from text-item coordinates. pdf.js gives a flat list of
+// runs with no notion of line or cell, and serializes tables cell-by-cell, so we
+// rebuild the visual layout from geometry: group runs into lines by baseline (y),
+// order top-to-bottom and left-to-right, then insert a space or COLUMN_SEPARATOR
+// based on the horizontal gap. Tables keep their columns. A heuristic, not a
+// real cell-box parse.
 //
-// pdf.js hands us the text layer as a flat list of runs, each with a position
-// (transform), an advance width, and a font height — but no notion of "line",
-// "paragraph", or "cell". Worse, in a table it serializes cell-by-cell, not
-// row-by-row, and fills column gaps with wide whitespace runs — so simply
-// concatenating `str` (or trusting `hasEOL`) collapses every table into a jumble.
-//
-// Instead we rebuild the visual layout from the geometry: group runs into lines by
-// their baseline (y), order lines top-to-bottom and runs left-to-right, then look
-// at the horizontal gap each run leaves to decide whether the next run is a normal
-// word (space), a new column (COLUMN_SEPARATOR), or touching (nothing). Single-
-// column prose comes out as one run per visual line with no separators — its
-// reading order preserved — while tables keep their columns. It's a heuristic, not
-// a real cell-box parse: independently-wrapped cells still surface as separate
-// lines, but the column structure survives, which is what downstream needs.
-//
-// Thresholds are multiples of the line's font size so they scale with the type:
-//  - COLUMN_FACTOR/COLUMN_FLOOR: a gap wider than max(FLOOR, FACTOR×fontSize) is a
-//    column boundary. Set well above normal inter-word spacing so justified prose
-//    is never mistaken for a table.
-//  - SPACE_FACTOR: a smaller gap with no whitespace run of its own — insert a space.
-//  - Y_FACTOR/Y_TOL_CAP: runs whose baselines differ by less than this share a line
-//    (tolerates minor baseline drift; capped so adjacent text lines never merge).
-// COLUMN_SEPARATOR must match the token format.ts recognizes to keep table rows on
-// their own line.
+// Thresholds are multiples of the font size so they scale with the type:
+//  - COLUMN_FACTOR/COLUMN_FLOOR: a gap wider than max(FLOOR, FACTOR×fontSize)
+//    is a column boundary (well above inter-word spacing).
+//  - SPACE_FACTOR: smaller gap — insert a space.
+//  - Y_FACTOR/Y_TOL_CAP: baseline tolerance for runs sharing a line.
+// COLUMN_SEPARATOR must match the token format.ts recognizes.
 const COLUMN_SEPARATOR = " | ";
 const COLUMN_FACTOR = 1.2;
 const COLUMN_FLOOR = 8;
@@ -61,9 +45,8 @@ type Run = {
   height: number; // ~ font size
 };
 
-// Keep only runs that carry visible text, with their coordinates. Whitespace-only
-// runs are dropped: pdf.js emits them to pad column gaps, but we re-derive spacing
-// from the coordinates ourselves, so keeping them would double-count the gap.
+// Keep only runs with visible text. Whitespace runs are dropped: spacing is
+// re-derived from coordinates, so they would double-count the gap.
 function toRuns(items: RawItem[]): Run[] {
   const runs: Run[] = [];
   for (const item of items) {
@@ -80,8 +63,8 @@ function toRuns(items: RawItem[]): Run[] {
   return runs;
 }
 
-// Median font size across the page's runs — the reference for a line's y-tolerance
-// and (as a fallback) a line whose runs all report zero height.
+// Median font size across the page's runs — reference for y-tolerance and as a
+// height fallback.
 function medianHeight(runs: Run[]): number {
   const hs = runs
     .map((r) => r.height)
@@ -113,9 +96,8 @@ function textFromContent(items: RawItem[]): string {
   const median = medianHeight(runs);
   const yTol = Math.min(Y_TOL_CAP, Y_FACTOR * median);
 
-  // Group into visual lines by baseline, top of the page first. Baselines within a
-  // line are effectively identical, and adjacent text lines sit well beyond yTol,
-  // so comparing each run to the line's first run is enough.
+  // Group into visual lines by baseline; comparing each run to the line's first
+  // run is enough, since adjacent text lines sit well beyond yTol.
   runs.sort((a, b) => b.y - a.y);
   const lines: Run[][] = [];
   for (const r of runs) {
@@ -136,9 +118,7 @@ export async function extractPdf(
   file: File,
   onProgress?: (p: Progress) => void,
 ): Promise<PageResult[]> {
-  const pdfjs = await getPdfjs();
-  const buffer = await file.arrayBuffer();
-  const loadingTask = pdfjs.getDocument({ data: buffer });
+  const loadingTask = await loadPdf(await file.arrayBuffer());
   const doc = await loadingTask.promise;
   const totalPages = doc.numPages;
   const results: PageResult[] = [];

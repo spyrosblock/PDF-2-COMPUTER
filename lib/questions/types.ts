@@ -1,14 +1,7 @@
-// The shape one set of IELTS questions is stored in.
-//
-// lib/claude/reading.ts gets a part's questions out of the PDF as a run of text:
-// faithful to the words, but flat. A student reading that has to reconstruct for
-// themselves which lines are the instructions, which are the options everyone
-// picks from, and which of the numbered lines belong to the same set. This model
-// is that reconstruction — the printed structure named, so the page can lay a
-// question set out the way the book does.
-//
-// The words are never ours: every string here is copied from the book (see
-// lib/claude/questions.ts). Only the structure around them is inferred.
+// The shape one set of IELTS questions is stored in: the printed structure
+// named, so a set can be laid out the way the book does. The words are never
+// ours — every string is copied from the book (lib/claude/questions.ts); only
+// the structure around them is inferred.
 
 // The 11 official IELTS Academic Reading question types (SPECS.md), plus a
 // fallback for a set that fits none of them. Summary, note, table and flow-chart
@@ -104,12 +97,8 @@ export type QuestionGroup = {
   figure?: Figure; // the map/plan/diagram it is answered against, when it has one
 };
 
-// Whether a set can be answered at all without seeing a picture. Listening Part 2
-// is the usual case — "Label the map below." and a list of places to write letters
-// against — but a reading passage's labelled diagram is the same. Read off what
-// the book printed rather than off the extraction: the instruction line names the
-// picture ("map", "plan", "diagram"), and the structuring step has already
-// classified a set built on one as diagram-labelling.
+// Whether a set can't be answered without seeing a picture — read off the
+// printed instruction ("map", "plan", "diagram") or the diagram-labelling type.
 const PICTURE_WORD = /\b(map|plan|diagram)\b/i;
 
 export function needsFigure(group: QuestionGroup): boolean {
@@ -119,15 +108,13 @@ export function needsFigure(group: QuestionGroup): boolean {
   );
 }
 
-// How a gap is written inside a string: "[[14]]" for the gap numbered 14, or
-// "[[]]" for an unnumbered one. The renderer turns these into blanks; nothing
-// else in the model marks a gap, so a run of printed dots never survives as dots.
+// How a gap is written inside a string: "[[14]]" (or "[[]]" unnumbered). The
+// renderer turns these into blanks; printed dots never survive as dots.
 export const GAP = /\[\[(\d*)\]\]/g;
 
 // The numbers a heading claims: "Questions 14-18" -> 14..18, "Questions 23 and
-// 24" -> 23, 24, "Question 40" -> 40. A set whose questions are printed on a map
-// rather than in its text carries its numbers nowhere else, so this is the only
-// way to know which boxes it wants filled.
+// 24" -> 23, 24, "Question 40" -> 40. For map-printed sets this is the only
+// place the numbers exist.
 export function headingNumbers(heading: string): number[] {
   const m = /(\d{1,2})\s*(?:[-–—]\s*|and\s+)?(\d{1,2})?/.exec(heading);
   if (!m) return [];
@@ -137,9 +124,7 @@ export function headingNumbers(heading: string): number[] {
   return Array.from({ length: to - from + 1 }, (_, i) => from + i);
 }
 
-// The numbers written as gaps in the set's own text — the ones a student can
-// answer where they stand, because there is a blank printed for them. Everything
-// GapText renders is scanned, so no gap on the page is missed.
+// The numbers written as gaps in the set's own text — answerable in place.
 export function gapNumbers(group: QuestionGroup): number[] {
   const found = new Set<number>();
   const scan = (text: string) => {
@@ -157,10 +142,9 @@ export function gapNumbers(group: QuestionGroup): number[] {
   return [...found].sort((a, b) => a - b);
 }
 
-// The numbers a group covers: every item number, plus every gap number in the
-// body. A question that takes two answers covers two numbered boxes, so it counts
-// for both. Used for a heading we can trust when the printed one was lost, and to
-// check a set against the numbers its heading claimed (verify.ts).
+// The numbers a group covers: every item number plus every gap number. A
+// multi-answer item counts for each of its boxes. Used for fallback headings
+// and verification (verify.ts).
 export function groupNumbers(group: QuestionGroup): number[] {
   const found = new Set<number>();
   for (const item of group.items) {

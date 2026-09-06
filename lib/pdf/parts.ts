@@ -1,15 +1,7 @@
-// Subdividing one skill into its parts.
-//
-// splitIntoSkills (split.ts) gives each skill as a flat run of pages in the
-// "----- Page N (source) -----" block format. IELTS skills are themselves made
-// of parts — Listening Part 1-4, Reading Passage 1-3, Writing Task 1-2 — each
-// introduced by a short heading line. We locate those headings and slice the
-// skill's pages at them, mirroring the boundary heuristic split.ts uses for
-// tests/skills. It's a text heuristic, not a semantic parse: it splits the text
-// into parts, it does NOT read the individual questions (a later step).
-//
-// Like split.ts and format.ts, this is pure string logic over the marker format
-// slicePages emits, so it can be exercised in isolation with plain fixtures.
+// Subdividing one skill into its parts (Listening Part 1-4, Reading Passage
+// 1-3, Writing Task 1-2). Locates each part's heading and slices the skill's
+// pages at it. A text heuristic, not a semantic parse — questions are read in
+// a later step. Pure string logic over the marker format, like split.ts.
 
 import { formatText } from "./format";
 import type { Part, Skill, TestSkill } from "./types";
@@ -19,35 +11,24 @@ const PAGE_MARKER = /^----- Page (\d+) \((text|ocr|empty)\) -----$/;
 
 type PseudoPage = { page: number; source: string; text: string };
 
-// How many parts each skill has, how to spot each part's heading, the questions
-// each part carries (per IELTS Academic), and how to label it. Skills absent here
-// (Speaking) aren't subdivided.
-//
-// Two detection modes:
-//  - "numbered": the heading carries its part number (capture group 1); we look
-//    for each expected number in turn. Robust against stray heading-like lines.
-//  - "ordered": the part number may be absent, so we can't key off it — we take
-//    every part heading in printed order and assign 1..count by position.
+// Per-skill spec: part count, heading pattern, question counts, labelling.
+// Skills absent here (Speaking) aren't subdivided. Detection modes:
+//  - "numbered": heading carries its part number; find each in turn.
+//  - "ordered": number unreliable/absent; assign 1..count by printed position.
 type PartSpec = {
   count: number;
   mode: "numbered" | "ordered";
   heading: RegExp;
   questions: (number | null)[];
   label: (n: number) => string;
-  // Optional: end the LAST part's prose at this marker (inclusive), cutting at the
-  // marker's last occurrence. Used for Writing Task 2, which closes the skill with
-  // "Write at least 250 words." and has the next section's fragments / page
-  // furniture swept in after it. Only the final part is trimmed (Task 1 is left
-  // whole); the regex should be global so the last match can be found.
+  // End the LAST part's prose at this marker's last occurrence (regex must be
+  // global). Used for Writing Task 2's trailing furniture.
   endAt?: RegExp;
 };
 
 const PART_SPECS: Partial<Record<Skill, PartSpec>> = {
-  // Listening: 4 parts of 10 questions, headed "PART 1-4" (newer/computer-delivered)
-  // or "SECTION 1-4" (older books). Some books print the part number badly or drop
-  // it entirely — the header shows as a bare "PART" or "PART Questions 1-10" — so we
-  // detect by order rather than by number: the heading is part/section, with the
-  // number optional and an optional inline "Questions ..." tail.
+  // Listening: 4 parts of 10 questions, headed "PART 1-4" or "SECTION 1-4".
+  // The printed number is often bad or missing, so detect by order.
   Listening: {
     count: 4,
     mode: "ordered",
@@ -55,8 +36,7 @@ const PART_SPECS: Partial<Record<Skill, PartSpec>> = {
     questions: [10, 10, 10, 10],
     label: (n) => `Part ${n}`,
   },
-  // Reading: 3 passages of 13 / 13 / 14 questions. Headed "READING PASSAGE 1-3",
-  // sometimes just "Passage N" or "Section N" — the number is reliable here.
+  // Reading: 3 passages of 13 / 13 / 14 questions; the number is reliable.
   Reading: {
     count: 3,
     mode: "numbered",
@@ -64,10 +44,8 @@ const PART_SPECS: Partial<Record<Skill, PartSpec>> = {
     questions: [13, 13, 14],
     label: (n) => `Reading Passage ${n}`,
   },
-  // Writing: 2 tasks, no fixed question count. Headed "WRITING TASK 1/2" or "Task N".
-  // Each task's prompt ends with "Write at least 150/250 words." — we cut the part
-  // there so nothing printed after it (the following section, page furniture) is
-  // kept.
+  // Writing: 2 tasks, no fixed question count. Each prompt ends with
+  // "Write at least 250 words." — cut there to drop what follows.
   Writing: {
     count: 2,
     mode: "numbered",
@@ -78,9 +56,8 @@ const PART_SPECS: Partial<Record<Skill, PartSpec>> = {
   },
 };
 
-// Rebuild the per-page list from a skill's raw marker text. Lines before the
-// first marker (there shouldn't be any) are dropped; if the text carries no
-// markers at all, this returns [] and the caller falls back to a single part.
+// Rebuild the per-page list from raw marker text; [] if no markers, in which
+// case the caller falls back to a single part.
 function pseudoPages(raw: string): PseudoPage[] {
   const pages: PseudoPage[] = [];
   for (const line of raw.split("\n")) {
@@ -95,9 +72,8 @@ function pseudoPages(raw: string): PseudoPage[] {
   return pages;
 }
 
-// The part numbers whose heading appears on a page — a short heading-like line
-// that is essentially just "Part 2" / "Reading Passage 3" / "Task 1", not an
-// inline mention in a sentence (same anchoring as split.ts's heading scans).
+// Part numbers whose heading appears on a page (heading line, not an inline
+// mention — same anchoring as split.ts's heading scans).
 function partNumbersOnPage(pageText: string, heading: RegExp): Set<number> {
   const nums = new Set<number>();
   for (const raw of pageText.split(/\r?\n/)) {
@@ -107,16 +83,12 @@ function partNumbersOnPage(pageText: string, heading: RegExp): Set<number> {
   return nums;
 }
 
-// Whether any line on a page is a part heading (used by ordered mode, where the
-// heading may not carry a number to key off).
+// Whether any line on a page is a part heading (used by ordered mode).
 function hasHeadingLine(pageText: string, heading: RegExp): boolean {
   return pageText.split(/\r?\n/).some((raw) => heading.test(raw.trim()));
 }
 
-// Drop every line above the first part heading on a page, keeping the heading
-// line itself. Applied to the first page of every part's slice so anything
-// printed above the "Part N" keyword — a cover/instructions block, or the tail
-// of the previous part — is left out of that part.
+// Drop every line above the first part heading on a page, heading included.
 function dropAboveHeading(pageText: string, heading: RegExp): string {
   const lines = pageText.split(/\r?\n/);
   const at = lines.findIndex((raw) => heading.test(raw.trim()));
@@ -125,8 +97,7 @@ function dropAboveHeading(pageText: string, heading: RegExp): string {
 
 type Mark = { index: number; idx: number };
 
-// Numbered mode: find the first page (scanning forward) that heads each expected
-// part number 1..count, in order. Mirrors the boundary scan in split.ts.
+// Numbered mode: find the first page heading each expected part number, in order.
 function detectByNumber(pages: PseudoPage[], spec: PartSpec): Mark[] {
   const marks: Mark[] = [];
   let cursor = 0;
@@ -145,9 +116,8 @@ function detectByNumber(pages: PseudoPage[], spec: PartSpec): Mark[] {
   return marks;
 }
 
-// Ordered mode: take each page that carries a part heading, in printed order, and
-// number them 1, 2, 3… — for skills whose printed part number is unreliable or
-// omitted (Listening). At most one mark per page, so slices are never empty.
+// Ordered mode: number the heading-bearing pages 1, 2, 3… in printed order.
+// At most one mark per page, so slices are never empty.
 function detectByOrder(pages: PseudoPage[], spec: PartSpec): Mark[] {
   const marks: Mark[] = [];
   for (let p = 0; p < pages.length; p++) {
@@ -158,10 +128,8 @@ function detectByOrder(pages: PseudoPage[], spec: PartSpec): Mark[] {
   return marks;
 }
 
-// Cut formatted prose off at (and including) the LAST match of `marker`, then
-// trim. Used to end Writing Task 2 at its final "Write at least 250 words." line
-// so the junk the extractor sweeps in afterwards is dropped. `marker` must be a
-// global regex (we scan every match and keep the last). No match → text unchanged.
+// Cut the text at (and including) the LAST match of `marker` (must be global).
+// No match → text unchanged.
 function truncateAfter(text: string, marker: RegExp): string {
   const re = new RegExp(marker.source, marker.flags.includes("g") ? marker.flags : marker.flags + "g");
   let last: RegExpExecArray | null = null;
@@ -178,9 +146,7 @@ function sliceText(pages: PseudoPage[]): string {
     .join("\n\n");
 }
 
-// A single unsplit part covering the whole skill — the honest fallback when the
-// part headings can't be found or don't match the expected count, rather than
-// guessing boundaries.
+// Whole-skill fallback when headings can't be found or don't match the count.
 function wholeSkillPart(skill: TestSkill): Part {
   return {
     index: 1,
@@ -192,13 +158,9 @@ function wholeSkillPart(skill: TestSkill): Part {
   };
 }
 
-// Split one skill into its parts by locating each part's heading within the
-// skill's pages (see PartSpec for the per-skill detection mode), so parts stay in
-// printed order. Each part begins at its heading: anything printed above the
-// "Part N" keyword is dropped (including the preamble before Part 1). If the
-// count of detected headings doesn't match the skill's expected part count, we
-// give up and return a single whole-skill part. Skills with no spec (Speaking,
-// or a skill we couldn't identify) return [].
+// Split one skill into its parts, each starting at its heading. Falls back to
+// a single whole-skill part if the detected heading count doesn't match the
+// spec; skills with no spec (Speaking) return [].
 export function splitSkillIntoParts(skill: TestSkill): Part[] {
   const spec = skill.skill ? PART_SPECS[skill.skill] : undefined;
   if (!spec) return [];
@@ -215,17 +177,14 @@ export function splitSkillIntoParts(skill: TestSkill): Part[] {
   return marks.map((mark, m) => {
     const to = m + 1 < marks.length ? marks[m + 1].idx : pages.length;
     const raw = pages.slice(mark.idx, to);
-    // Start the part at its heading: drop anything printed above the "Part N"
-    // keyword on the slice's first page (for Part 1 this also drops the preamble
-    // pages before it, since the slice begins at the heading page).
+    // Start the part at its heading (for Part 1 this also drops the preamble).
     const first = raw[0];
     const slice = [
       { ...first, text: dropAboveHeading(first.text, spec.heading) },
       ...raw.slice(1),
     ];
     const text = formatText(sliceText(slice));
-    // Trim only the final part (Writing Task 2) at its "Write at least 250 words."
-    // line; earlier parts (Task 1) are left whole.
+    // Trim only the final part (Writing Task 2) at its end marker.
     const isLast = mark.index === spec.count;
     return {
       index: mark.index,

@@ -1,31 +1,20 @@
 "use client";
 
-// What the student has typed into a paper's gaps, kept per book/test/skill.
-//
-// One sheet holds every answer of one skill — all four Listening parts, all three
-// Reading passages — keyed the way the exam keys them: by question number, as a
-// string. A gap the book left unnumbered has no such name, so it falls back to
-// where it sits on the page (see answerId in app/QuestionGroups.tsx); those keys
-// are stable for as long as the extraction is, which is what a draft needs.
-//
-// It is stored the same way the skill timer is (lib/timers.ts): localStorage,
-// read through useSyncExternalStore so the first render is hydration-safe and so
-// every part of a skill — and every open tab — sees the same sheet. That matters
-// more here than for the timer: the parts of a skill are tabs that unmount as the
-// student switches between them, and an answer typed into Part 1 has to survive
-// a look at Part 2.
+// The student's typed answers, kept per book/test/skill. One sheet holds all
+// answers of one skill, keyed by question number (or a positional fallback for
+// unnumbered gaps — see answerId in app/QuestionGroups.tsx). Stored like the
+// skill timer (lib/timers.ts): localStorage via useSyncExternalStore, so the
+// sheet is shared across a skill's tabs and survives unmounts.
 
 import { useCallback, useMemo, useSyncExternalStore } from "react";
 
-// Question number (or fallback id) -> what the student wrote. An answer cleared
-// back to empty is removed rather than stored blank, so an untouched sheet and a
-// wiped one are the same thing.
+// Question number (or fallback id) -> what the student wrote. Cleared answers
+// are removed, not stored blank.
 export type Answers = Record<string, string>;
 
 const EMPTY: Answers = {};
 const PREFIX = "p2c:answers:";
-// Dispatched after a same-tab write so useSyncExternalStore subscribers re-read
-// (the native "storage" event only fires in *other* tabs).
+// Dispatched after a same-tab write ("storage" only fires in other tabs).
 const CHANGED_EVENT = "p2c:answers-changed";
 
 function keyFor(bookId: string, test: number, skill: string): string {
@@ -57,9 +46,8 @@ function parse(raw: string | null): Answers {
   }
 }
 
-// getSnapshot must return a referentially stable value while the underlying data
-// is unchanged, or useSyncExternalStore loops forever. Cache the parsed object
-// per key and only rebuild it when the raw string actually changes.
+// getSnapshot must be referentially stable: cache per key, rebuild only when
+// the raw string changes.
 const cache = new Map<string, { raw: string | null; value: Answers }>();
 
 function getSnapshot(key: string): Answers {
@@ -76,8 +64,7 @@ function commit(key: string, value: Answers): void {
   try {
     localStorage.setItem(key, raw);
   } catch {
-    // Storage full or unavailable (private mode): the sheet still works for the
-    // session via the cache below, it just won't survive a reload.
+    // Storage unavailable: works for the session via the cache, just won't persist.
   }
   cache.set(key, { raw, value });
   window.dispatchEvent(new CustomEvent(CHANGED_EVENT, { detail: key }));

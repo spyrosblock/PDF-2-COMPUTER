@@ -1,38 +1,20 @@
-// Prompts for reading extraction, and the reply shapes they ask for.
-//
-// A Cambridge reading part is printed as one continuous run: the passage, then
-// the question groups. lib/pdf gets us that run as text (formatText output), but
-// it is a flattened text layer — page banners, running headers, and tables
-// rebuilt as " | " rows — so telling passage from questions, and keeping a
-// question set intact, is a judgement call rather than a regex. That is what we
-// ask Claude to do, in the three steps app/api/reading exposes:
-//
-//   1. passage       — the passage text on its own
-//   2. questions     — is the questions text clear enough? if so, the questions
-//   3. questions/page— when it isn't: one page at a time, with the page image
-//
-// The prompts live here (not in the routes) because all three describe the same
-// input format, and that description has to stay identical across them. The
-// fragments both skills share are in shared.ts; the listening equivalents of
-// steps 2 and 3 are in listening.ts.
+// Prompts for reading extraction: separate passage from questions, and keep
+// question sets intact — a judgement call, so it goes to the model. Three
+// steps: passage, questions (with a clarity check), questions per page. The
+// prompts live here, not in the routes, so their shared description of the
+// input format stays in one place. Shared fragments in shared.ts; listening's
+// equivalents in listening.ts.
 
 import { INPUT_FORMAT, LAYOUT_RULE, type QuestionPrompts } from "./shared";
 
 // What counts as the questions, as opposed to the passage.
 const WHAT_QUESTIONS_ARE = `The questions are everything that is not the passage: each "Questions X-Y" group heading, the instructions under it (word limits, "Choose TWO letters", lists of headings or features), and the numbered questions themselves with their options, tables, notes, summaries and diagram labels.`;
 
-// A note on shape, learned the hard way against this endpoint. Each prompt opens
-// with what to return, then what to leave out, then the text — putting the
-// exclusions first made the model answer NONE for a passage it had reproduced
-// perfectly a moment earlier.
-//
-// And an "output NONE instead" escape hatch is dangerous: offer one for something
-// the input plainly contains and the model takes it. The whole-part prompts asked
-// for one and got NONE back — reproducibly for the questions, intermittently for
-// the passage — so neither carries one now; an empty answer is simply read as
-// "nothing found". Only the per-page prompt keeps the hatch, because there it
-// earns its place: most pages of a part really are all passage and no questions,
-// and that is the one case the caller has to be able to tell apart.
+// Prompt shape, learned the hard way: what-to-return before exclusions, and no
+// "output NONE" escape hatch in the whole-part prompts (the model takes it and
+// answers NONE for text it plainly contains). Only the per-page prompt keeps
+// the hatch — there, most pages really are all passage, and the caller has to
+// be able to tell that apart.
 
 export function passagePrompt(text: string): string {
   return `You are digitising one part of an IELTS Academic Reading test so a student can sit it on screen.
@@ -49,9 +31,8 @@ Output the passage and nothing else — no preamble, no commentary, no markdown 
 ${text}`;
 }
 
-// Step 2a. The model either accepts the text or asks for whole pages as images
-// it can read itself. Kept to a small fixed reply so nothing long has to survive
-// JSON escaping; the questions themselves are fetched separately.
+// Step 2a. The model accepts the text or asks for pages as images. Small fixed
+// reply; the questions themselves are fetched separately.
 export function questionsCheckPrompt(text: string): string {
   return `You are digitising one part of an IELTS Academic Reading test.
 
@@ -88,9 +69,8 @@ Output the questions and nothing else — no preamble, no commentary, no markdow
 ${text}`;
 }
 
-// Step 2b. One page at a time, once the model has asked for pages. The page image
-// is attached when this is one of the pages it asked for; otherwise it works from
-// the page's text alone.
+// Step 2b. One page at a time, once the model has asked for pages. The image is
+// attached only for pages it asked for.
 export function questionsPagePrompt(
   page: number,
   text: string,

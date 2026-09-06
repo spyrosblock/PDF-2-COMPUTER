@@ -1,40 +1,29 @@
-// Splitting a Cambridge IELTS book into its 4 tests, and each test into its skills.
-//
-// These books lay out four full practice tests back-to-back, each test's pages
-// carrying a short running header / title like "Test 1", "Test 2 Reading", etc.
-// We locate the first page where each test's heading appears and slice the page
-// list at those boundaries. It's a heuristic on the raw text layer, not a
-// semantic parse — good enough to preview the four tests separately. Subdividing
-// each skill further into its parts is a later step (parts.ts).
-//
-// This module is pure text logic: it depends on nothing but the PageResult shape,
+// Splitting a Cambridge IELTS book into its 4 tests, and each test into its
+// skills. The tests run back-to-back, each carrying a "Test N" running header;
+// we slice at the first page where each heading appears. A heuristic on the raw
+// text layer, not a semantic parse. Pure text logic over the PageResult shape,
 // so it can be exercised in isolation with plain fixtures.
 
 import type { PageResult, Skill, TestSkill } from "./types";
 
 const SKILLS: Skill[] = ["Listening", "Reading", "Writing", "Speaking"];
 
-// Which test numbers appear as a *heading-like* line on a page — i.e. a short
-// line that is essentially just "Test N" (running header or title), rather than
-// an inline mention buried in a sentence. Returns the distinct numbers found.
+// Test numbers appearing as a heading-like line ("Test N"), not an inline
+// mention. Returns the distinct numbers found.
 function headingTestNumbers(pageText: string): Set<number> {
   const nums = new Set<number>();
   for (const raw of pageText.split(/\r?\n/)) {
-    // "Test 1", "Test1", "TEST 2 Reading", "Test 3 Reading Passage" — the space
-    // between "test" and the number is optional (some books render it glued), and
-    // a short tail is allowed so headers with a skill label still match, but
-    // sentences don't.
+    // Space between "test" and number optional; a short tail is allowed so
+    // headers with a skill label still match, but sentences don't.
     const m = /^\s*test\s*([1-4])\b.{0,24}$/i.exec(raw.trim());
     if (m) nums.add(Number(m[1]));
   }
   return nums;
 }
 
-// Which of the four skills start on a page — detected from a heading-like line
-// that is essentially just the skill name. A leading "Test N" is allowed (some
-// books glue the skill onto the running header, e.g. "Test 1 Reading") and a
-// short tail is allowed so "Reading Passage 1" / "Writing Task 1" still match,
-// but a sentence that merely opens with the word doesn't.
+// Which skills start on a page, from a heading-like line. A leading "Test N"
+// and a short tail are allowed ("Test 1 Reading", "Reading Passage 1"); a
+// sentence that merely opens with the word doesn't match.
 function skillHeadings(pageText: string): Set<Skill> {
   const found = new Set<Skill>();
   for (const raw of pageText.split(/\r?\n/)) {
@@ -49,24 +38,14 @@ function skillHeadings(pageText: string): Set<Skill> {
   return found;
 }
 
-// The Cambridge books close with an "Audio scripts" section — transcripts of the
-// listening tests. It's out of scope here (reading only) and, worse, it repeats
-// "Test 1".."Test 4" headings, so if left in it gets swept into Test 4's slice
-// (the last test runs to the end of the book). Find where it begins so we can
-// drop it and everything after. Returns the page index, or -1 if not present.
-//
-// We scan from the *back*, because the front Contents page also lists
-// "Audioscripts" (as an index entry), which a forward scan would wrongly take as
-// the section start and so throw the whole book away. To tell the real section
-// from that Contents reference — and from its own running headers, which repeat
-// "Audioscripts" on later pages — we require a "Test 1"/"Test1" heading on the
-// *same* page: the transcripts open with "Audioscripts" and "Test 1" together, so
-// that pairing marks the section's start. A wider lookahead can't be used because
-// "Test 1" recurs afterwards (answer keys, sample answers), which would pull the
-// cut too far into the section. The first page with both, scanning backward, wins.
+// Find where the trailing "Audio scripts" section begins, so it (which repeats
+// "Test N" headings) can be dropped. Scans from the back: the front Contents
+// page also lists "Audioscripts". The real section is identified by pairing
+// "Audioscripts" with a "Test 1" heading on the same page — its running headers
+// alone repeat "Audioscripts", and "Test 1" recurs later in the section. Returns
+// the page index, or -1 if not present.
 function isAudioHeading(text: string): boolean {
-  // "Audioscript", "Audio scripts", "AUDIOSCRIPTS" as a heading-like line
-  // (the space between the two words is optional; some books glue them).
+  // "Audio scripts" as a heading-like line (space optional).
   return text
     .split(/\r?\n/)
     .some((raw) => /^\s*audio\s*scripts?\b.{0,24}$/i.test(raw.trim()));
@@ -88,24 +67,21 @@ function slicePages(pages: PageResult[], from: number, to: number): string {
     .join("\n\n");
 }
 
-// Locate the four tests as page-index ranges into a trimmed page list — the
-// coarse boundary heuristic that splitIntoSkills then subdivides into skills.
+// Locate the four tests as page-index ranges into a trimmed page list.
 function testBoundaries(
   allPages: PageResult[],
 ): { pages: PageResult[]; ranges: { from: number; to: number }[] } {
   if (allPages.length === 0) return { pages: [], ranges: [] };
 
-  // Drop the trailing "Audio scripts" section (and anything after it) before
-  // slicing, so it doesn't bleed into the last test.
+  // Drop the trailing "Audio scripts" section so it doesn't bleed into Test 4.
   const cut = audioScriptsIndex(allPages);
   const pages = cut === -1 ? allPages : allPages.slice(0, cut);
   if (pages.length === 0) return { pages: [], ranges: [] };
 
   const headingSets = pages.map((p) => headingTestNumbers(p.text));
 
-  // A page qualifies as test N's start only if its sole heading is N. Pages that
-  // mention several tests at once (the contents page, the answer-key index) name
-  // more than one number, so this filters them out as false boundaries.
+  // A page qualifies as test N's start only if N is its sole heading — pages
+  // mentioning several tests (contents, key index) are false boundaries.
   const qualifies = (idx: number, n: number) =>
     headingSets[idx].has(n) && headingSets[idx].size === 1;
 
@@ -132,12 +108,10 @@ function testBoundaries(
   return { pages, ranges };
 }
 
-// Split each test further into its skills (Listening, Reading, Writing, Speaking)
-// by finding, within the test's page range, the first page each skill's heading
-// appears on — scanning forward so the skills stay in printed order. Pages before
-// the first detected skill fold into that first skill so nothing is dropped. If
-// no skills are found for a test, it's emitted as one TestSkill with skill: null.
-// Each TestSkill's `parts` is left empty here; parts.ts subdivides it downstream.
+// Split each test into its skills by finding the first page each skill's
+// heading appears on, in printed order. Preamble before the first skill folds
+// into it; a test with no detected skills is one TestSkill with skill: null.
+// `parts` is left empty here; parts.ts subdivides downstream.
 export function splitIntoSkills(allPages: PageResult[]): TestSkill[] {
   const { pages, ranges } = testBoundaries(allPages);
   const skills: TestSkill[] = [];

@@ -3,7 +3,7 @@
 import { useCallback, useMemo, useState } from "react";
 import { useParams } from "next/navigation";
 import Link from "next/link";
-import type { Part, PartQuestions, Reading, TestSkill } from "@/lib/pdf";
+import type { Part, PartQuestions, Reading, Skill, TestSkill } from "@/lib/pdf";
 import { useBook } from "@/lib/books";
 import { slugToSkill } from "@/lib/skills";
 import { useSkillTimer, formatDuration, type SkillTimer } from "@/lib/timers";
@@ -13,20 +13,16 @@ import { QuestionGroups } from "@/app/QuestionGroups";
 import { Results } from "@/app/Results";
 import { markSheet, type Marking } from "@/lib/questions";
 
-// One skill of a test (Listening, Reading, or Writing) on its own page. It shows
-// the skill's extracted text — broken into its parts (Listening Part 1-4, Reading
-// Passage 1-3, Writing Task 1-2) when the split found them — and a start/stop
-// timer that the student controls themselves; the timer is persisted per
-// book/test/skill, so it survives navigation and reloads. The book is loaded from
-// IndexedDB by the id in the URL, and the skill comes from the URL slug.
+// One skill of a test on its own page: extracted text broken into parts, plus a
+// persisted start/stop timer. Book from IndexedDB by URL id, skill from slug.
 export default function SkillPage() {
   const params = useParams<{ bookId: string; test: string; skill: string }>();
   const testNum = Number(params.test);
   const skill = slugToSkill(params.skill);
   const { loading, book } = useBook(params.bookId);
 
-  // One sheet for the whole skill, so an answer typed into Part 1 is still there
-  // after a look at Part 2 (the parts are tabs, and the hidden one unmounts).
+  // One sheet for the whole skill: answers typed into Part 1 survive a look at
+  // Part 2 (tabs unmount their hidden part).
   const answers = useAnswers(params.bookId, testNum, skill ?? "");
 
   // The extracted skill for this test + skill, if the book has one.
@@ -37,16 +33,12 @@ export default function SkillPage() {
     );
   }, [book, testNum, skill]);
 
-  // Marking is the skill's business rather than any one part's: the key covers
-  // all forty boxes and the sheet holds all of them, so the button that hands
-  // the paper in — and the report that comes back — sit out here, above the tabs
-  // the parts are shown in. The timer is lifted here too, because handing a paper
-  // in stops timing it.
+  // Marking and the timer live at the skill level, above the part tabs —
+  // handing a paper in stops timing it.
   const timer = useSkillTimer(params.bookId, testNum, skill ?? "");
   const [marking, setMarking] = useState<Marking | null>(null);
 
-  // Only Listening and Reading are marked: they are the skills the books print a
-  // key for, and the only ones whose answers are boxes rather than an essay.
+  // Only Listening and Reading are marked — the skills with a printed key.
   const markable = skill === "Listening" || skill === "Reading";
   const answerKey = testSkill?.answerKey;
   const stopTimer = timer.stop;
@@ -55,8 +47,7 @@ export default function SkillPage() {
     if (!answerKey?.length) return;
     stopTimer();
     setMarking(markSheet(answerKey, answers.all));
-    // The report appears above the questions; the student is usually at the
-    // bottom of the last part when they submit, so take them to it.
+    // The report appears above the questions; scroll the student to it.
     window.scrollTo({ top: 0, behavior: "smooth" });
   }, [answerKey, answers.all, stopTimer]);
 
@@ -100,7 +91,7 @@ export default function SkillPage() {
 
       {testSkill ? (
         testSkill.parts.length > 0 ? (
-          <SkillTabs testSkill={testSkill} answers={answers} />
+          <SkillTabs testSkill={testSkill} answers={answers} skill={skill} />
         ) : (
           <>
             <FormattedText text={testSkill.text} />
@@ -134,15 +125,17 @@ export default function SkillPage() {
 function SkillTabs({
   testSkill,
   answers,
+  skill,
 }: {
   testSkill: TestSkill;
   answers: AnswerSheet;
+  skill: Skill;
 }) {
   const tabs = useMemo(() => {
     const list = testSkill.parts.map((part) => ({
       key: `part-${part.index}`,
       label: part.label,
-      content: <PartContent part={part} answers={answers} />,
+      content: <PartContent part={part} answers={answers} skill={skill} />,
     }));
     if (testSkill.answers) {
       list.push({
@@ -152,7 +145,7 @@ function SkillTabs({
       });
     }
     return list;
-  }, [testSkill, answers]);
+  }, [testSkill, answers, skill]);
 
   const [active, setActive] = useState(0);
   const current = tabs[Math.min(active, tabs.length - 1)];
@@ -162,7 +155,7 @@ function SkillTabs({
       <section className="flex flex-col gap-2">{current.content}</section>
 
       <nav className="fixed inset-x-0 bottom-0 z-20 border-t border-black/10 bg-background/90 backdrop-blur dark:border-white/10">
-        <div className="mx-auto flex w-full max-w-4xl items-stretch gap-1 px-6 py-2">
+        <div className="flex w-full items-stretch gap-1 px-3 py-2 md:px-4">
           {tabs.map((tab, i) => (
             <button
               key={tab.key}
@@ -184,23 +177,21 @@ function SkillTabs({
   );
 }
 
-// One part's heading (label + expected question count) followed by its content and
-// any rendered page images (Writing Task 1). Four cases:
-//  - a reading part that was split into passage and questions shows the two under
-//    their own headings — the shape the test itself uses;
-//  - a listening part is questions alone: nothing of the recording is printed, so
-//    the questions (and the maps they are answered against) are the whole part;
-//  - Writing Task 1 is a chart / graph / map whose real content is the page image,
-//    and its extracted text is garbled OCR of that visual, so only the image shows;
-//  - Writing Task 2 shows the task description the analysis read out of its text
-//    (the raw text carries the heading, page banners and stray fragments around
-//    it), falling back to that raw text when the read failed;
-//  - anything else falls back to the part's raw extracted text.
-// (The upload debug view still renders the raw text for every part.)
-function PartContent({ part, answers }: { part: Part; answers: AnswerSheet }) {
+// One part's heading, content, and page images (Writing Task 1): reading shows
+// passage/questions side by side, listening is questions alone, Writing Task 1
+// shows only the chart image, Task 2 the read description (raw text as
+// fallback), and anything else its raw extracted text.
+function PartContent({
+  part,
+  answers,
+  skill,
+}: {
+  part: Part;
+  answers: AnswerSheet;
+  skill: Skill;
+}) {
   const hideText = part.label === "Task 1";
-  // Names this part when a gap has no printed number of its own to be stored
-  // under; the parts of a skill share one sheet, so "1" alone wouldn't do.
+  // Names unnumbered gaps; the parts of a skill share one sheet.
   const scope = `p${part.index}`;
   return (
     <>
@@ -212,12 +203,15 @@ function PartContent({ part, answers }: { part: Part; answers: AnswerSheet }) {
           </span>
         )}
       </h2>
-      {part.reading ? (
+      {skill === "Writing" ? (
+        // A writing task is the exam's own split screen: the task on the left,
+        // the essay typed on the right — like the computer-delivered test.
+        <WritingPart part={part} answers={answers} scope={scope} />
+      ) : part.reading ? (
         <ReadingContent reading={part.reading} answers={answers} scope={scope} />
       ) : part.listening ? (
-        // A listening part is questions and nothing else, so if none were read
-        // there is nothing left to show — fall back to the raw extracted text
-        // rather than to an empty tab.
+        // A listening part is questions and nothing else — fall back to raw
+        // text rather than an empty tab.
         part.listening.groups?.length || part.listening.questions ? (
           <Questions
             questions={part.listening}
@@ -229,27 +223,72 @@ function PartContent({ part, answers }: { part: Part; answers: AnswerSheet }) {
           <FormattedText text={part.text} />
         )
       ) : (
-        !hideText && (
-          <FormattedText text={part.writing?.prompt || part.text} />
-        )
+        !hideText && <FormattedText text={part.text} />
       )}
-      {part.images?.map((src, i) => (
-        // eslint-disable-next-line @next/next/no-img-element
-        <img
-          key={i}
-          src={src}
-          alt={`${part.label} page ${i + 1}`}
-          className="w-full rounded-lg border border-black/10 dark:border-white/10"
-        />
-      ))}
+      {skill !== "Writing" &&
+        part.images?.map((src, i) => (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img
+            key={i}
+            src={src}
+            alt={`${part.label} page ${i + 1}`}
+            className="w-full rounded-lg border border-black/10 dark:border-white/10"
+          />
+        ))}
     </>
   );
 }
 
-// A reading part as the exam presents it: the passage, then the questions. Not
-// yet the side-by-side split of the real computer-delivered test — but already
-// the two halves apart, which is what the extraction gives us. Either half can be
-// empty if the API found nothing.
+// A writing task split-screen: task (chart image or read description) on the
+// left, essay textarea on the right. The essay lives on the shared answer
+// sheet, keyed per part; word count against the task's minimum underneath.
+function WritingPart({
+  part,
+  answers,
+  scope,
+}: {
+  part: Part;
+  answers: AnswerSheet;
+  scope: string;
+}) {
+  const id = `${scope}:essay`;
+  const value = answers.get(id);
+  const words = value.trim() ? value.trim().split(/\s+/).length : 0;
+  const minWords = part.index === 1 ? 150 : 250;
+  return (
+    <div className="grid gap-6 md:grid-cols-2">
+      <div className="flex min-w-0 flex-col gap-2">
+        {part.label !== "Task 1" && (
+          <FormattedText text={part.writing?.prompt || part.text} />
+        )}
+        {part.images?.map((src, i) => (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img
+            key={i}
+            src={src}
+            alt={`${part.label} page ${i + 1}`}
+            className="w-full rounded-lg border border-black/10 dark:border-white/10"
+          />
+        ))}
+      </div>
+      <div className="flex min-w-0 flex-col gap-2">
+        <textarea
+          value={value}
+          onChange={(e) => answers.set(id, e.target.value)}
+          placeholder="Write your answer here…"
+          spellCheck={false}
+          className="min-h-[28rem] w-full flex-1 resize-y rounded-lg border border-black/10 bg-transparent p-4 text-sm leading-relaxed outline-none focus:border-black/30 dark:border-white/10 dark:focus:border-white/30"
+        />
+        <p className="text-xs text-black/50 dark:text-white/50">
+          {words} words · aim for at least {minWords}
+        </p>
+      </div>
+    </div>
+  );
+}
+
+// A reading part split-screen: passage left, questions right. Both empty →
+// the part says so instead of showing two blanks.
 function ReadingContent({
   reading,
   answers,
@@ -259,25 +298,31 @@ function ReadingContent({
   answers: AnswerSheet;
   scope: string;
 }) {
+  const hasQuestions = !!reading.groups?.length || !!reading.questions;
   return (
-    <>
-      {reading.passage && <FormattedText text={reading.passage} />}
-      <Questions questions={reading} heading answers={answers} scope={scope} />
-      {!reading.passage && !reading.questions && (
-        <p className="text-sm text-black/60 dark:text-white/60">
-          Nothing could be read out of this part.
-        </p>
-      )}
-    </>
+    // Wide screens: each half scrolls on its own; narrow screens stack.
+    <div className="grid gap-6 md:h-[calc(100dvh-14rem)] md:grid-cols-2">
+      <div className="flex min-w-0 flex-col gap-2 md:border-r md:border-black/10 md:pr-3 md:overflow-y-auto dark:md:border-white/10">
+        {reading.passage ? (
+          <FormattedText text={reading.passage} />
+        ) : (
+          !hasQuestions && (
+            <p className="text-sm text-black/60 dark:text-white/60">
+              Nothing could be read out of this part.
+            </p>
+          )
+        )}
+      </div>
+      <div className="flex min-w-0 flex-col gap-2 md:pl-3 md:overflow-y-auto">
+        <Questions questions={reading} heading answers={answers} scope={scope} />
+      </div>
+    </div>
   );
 }
 
-// A part's questions, laid out as the book prints them when the analysis managed
-// to structure them (see lib/questions) and answerable where it found gaps; when
-// it didn't — and for books stored before that step existed — they fall back to
-// the extracted text, which can only be read. A reading part heads them
-// "Questions" to set them off from the passage above; a listening part is nothing
-// but questions, so it doesn't.
+// A part's questions as structured groups when the analysis managed it, falling
+// back to the extracted text otherwise. A reading part heads them "Questions";
+// a listening part is nothing but questions, so it doesn't.
 function Questions({
   questions,
   heading,
@@ -322,7 +367,7 @@ function Shell({
   children: React.ReactNode;
 }) {
   return (
-    <main className="mx-auto flex w-full max-w-4xl flex-1 flex-col gap-6 px-6 pt-10 pb-28">
+    <main className="flex w-full flex-1 flex-col gap-6 px-3 pt-10 pb-28 md:px-4">
       <header className="flex flex-col gap-1">
         <p className="text-sm text-black/50 dark:text-white/50">Test {testNum}</p>
         <h1 className="text-2xl font-semibold tracking-tight">{title}</h1>
@@ -332,12 +377,9 @@ function Shell({
   );
 }
 
-// The bar the skill is sat under: the stopwatch on the left — Start and Stop
-// toggle counting, Reset returns it to 00:00 — and, on the right, the button that
-// hands the paper in. Submit is shown only for the skills that are marked at all
-// (`onSubmit` is null otherwise) and is disabled when the book's key couldn't be
-// read, since there would then be nothing to mark against; it stays enabled once
-// a paper has been marked, so a student who corrects an answer can mark again.
+// The bar the skill sits under: stopwatch on the left, Submit on the right —
+// shown only for marked skills (`onSubmit` null otherwise) and disabled when
+// no key was read; it stays enabled once marked, so corrections can be re-marked.
 function SkillTimerBar({
   timer,
   onSubmit,

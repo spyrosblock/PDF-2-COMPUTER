@@ -1,14 +1,6 @@
-// The extraction steps, as the routes under app/api run them.
-//
-// Reading and listening are digitised by the same three steps — check the text,
-// read the questions out of it (whole, or a page at a time with the page images),
-// then describe those questions as structure — and only the prompts differ. The
-// routes are therefore thin: they check their request body and call in here with
-// their skill's prompts, so there is one implementation of each step rather than
-// one per skill.
-//
-// Everything here runs on the server: it reaches the Claude API through
-// lib/claude/client.ts, which holds the key.
+// The extraction steps, as the routes under app/api run them. Reading and
+// listening share one implementation; only the prompts differ. Server-only —
+// it reaches the Claude API through lib/claude/client.ts, which holds the key.
 
 import { answerKeyPrompt } from "./answers";
 import {
@@ -40,14 +32,10 @@ export type QuestionsResult =
   | { status: "ok"; questions: string }
   | { status: "need-pages"; pages: number[] };
 
-// Step 1. Ask first whether the extracted text is clear enough to read the
-// questions from; only when it says yes do we spend a second call reading them.
-// When it asks for pages the caller switches to extractPageQuestions, because
-// rendering those page images needs the PDF, which lives in the browser.
-//
-// A reply we can't parse is treated as "ok": the check is a quality gate, not the
-// extraction itself, and falling back to the text costs less than failing the
-// part outright.
+// Step 1. Ask whether the text is clear enough before spending a second call
+// reading the questions. "need-pages" hands back to the caller (rendering the
+// images needs the PDF, which lives in the browser). An unparseable reply is
+// treated as "ok" — the check is a quality gate, not the extraction.
 export async function checkAndExtractQuestions(
   text: string,
   prompts: QuestionPrompts,
@@ -63,16 +51,15 @@ export async function checkAndExtractQuestions(
     return { status: "need-pages", pages: check.pages };
   }
 
-  // The model has just called this text clear enough to read the questions from,
-  // so an empty answer contradicts itself — ask again before believing it.
+  // The model just called this text clear enough, so an empty answer
+  // contradicts itself — ask again before believing it.
   const questions = await askClaudeForText(prompts.extract(text), [], true);
   return { status: "ok", questions };
 }
 
-// Step 2. The questions on ONE printed page. `image` is a
-// "data:image/jpeg;base64,..." URL rendered from the PDF in the browser, attached
-// for the pages the model asked to see; the others go as text alone. Returns ""
-// when nothing on the page is a question.
+// Step 2. The questions on ONE printed page. `image` is a data URL attached
+// for pages the model asked to see. Returns "" when nothing on the page is a
+// question.
 export async function extractPageQuestions(
   page: number,
   text: string,
@@ -85,11 +72,8 @@ export async function extractPageQuestions(
   const attachments = image
     ? [dataUrlToAttachment(image, `page-${page}.jpg`)]
     : [];
-  // A page that carries no questions is a real answer for reading (most pages of
-  // a part are all passage) and a rare one for listening, so NONE is taken at
-  // face value. It isn't when the page's text plainly carries questions, or when
-  // this is a page the model asked to see for itself — there, an empty answer is
-  // a slip, so it gets one more go.
+  // NONE is taken at face value unless the page plainly carries questions or
+  // the model asked to see it — there, an empty answer is a slip; retry once.
   const mustHaveQuestions = image !== null || looksLikeQuestions(text);
   return askClaudeForText(
     prompts.page(page, text, attachments.length > 0),
@@ -98,11 +82,8 @@ export async function extractPageQuestions(
   );
 }
 
-// How many goes one question set gets at being structured. All three ways it
-// fails are worth a second try and none are worth failing the part over: the
-// upstream times out (these replies run close to its limit), the reply can't be
-// parsed, or it comes back missing something the printed set plainly has — a
-// question number, or the list of options (lib/questions/verify.ts).
+// Tries per question set: timeout, unparseable reply, or a missing question
+// number / option list all warrant one retry, but not failing the part.
 const TRIES = 2;
 
 async function structureOnce(
@@ -144,42 +125,25 @@ async function structureSet(
   return best;
 }
 
-// Step 3. The questions as question groups rather than as text.
-//
-// One call per printed question set, not one per part. The reply is JSON as long
-// as the questions it describes, and a whole part's worth takes long enough that
-// the upstream gateway times out (see lib/questions/split.ts) — so the text is
-// cut at its group headings first and the sets are structured one after another.
-// Sequentially, because the parts themselves are already analysed several at a
-// time (lib/analyze) and firing every set of every part at once would only invite
-// rate limits.
-//
-// If neither try at a set is complete the fuller of the two is kept; that set is
-// then imperfect, the rest of the part isn't.
+// Step 3. The questions as structured groups — one call per printed set, cut
+// at its group headings first (a whole part's JSON reply would time out; see
+// lib/questions/split.ts) and structured side by side. The fuller try is kept
+// when neither is complete.
 export async function structureQuestions(
   questions: string,
   skill: QuestionSkill,
 ): Promise<QuestionGroup[]> {
-  const groups: QuestionGroup[] = [];
-  for (const set of splitQuestionSets(questions)) {
-    groups.push(...(await structureSet(set, skill)));
-  }
-  return groups;
+  const structured = await Promise.all(
+    splitQuestionSets(questions).map((set) => structureSet(set, skill)),
+  );
+  return structured.flat();
 }
 
-// Step 4. The skill's printed answer key as the answers themselves.
-//
-// Not part of the walk above: a key belongs to a whole skill rather than to one
-// part (the books print one page of answers for all 40 questions), and it is
-// split off the skill's text long before any part is analysed — see
-// lib/pdf/answers.ts. It is also short, so unlike the questions it goes up in a
-// single call.
-//
-// The same two tries the question sets get, and for the same reasons: the reply
-// can fail to parse, and it can come back missing answers the page plainly
-// printed. A key with a hole in its numbering is the tell — the books number
-// straight through, so a gap is a line the model skipped — and between two
-// imperfect readings the one that skipped less is kept.
+// Step 4. The skill's printed answer key as the answers themselves. Not part
+// of the walk: a key covers a whole skill and is split off early (see
+// lib/pdf/answers.ts); it goes up in a single call. Same two tries as the
+// question sets — a hole in the numbering is the tell of a skipped line, and
+// the reading that skipped less is kept.
 export async function extractAnswerKey(
   text: string,
   skill: QuestionSkill,

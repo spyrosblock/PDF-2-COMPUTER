@@ -1,20 +1,12 @@
-// Prompts for writing extraction.
-//
-// A Writing task has no question sets to read — Task 1 is a chart kept as a page
-// image, and Task 2 is a prompt the student answers in prose. What Task 2 needs
-// digitised is the task description on its own: the extracted text carries the
-// "WRITING TASK 2" heading, the page banners, and whatever fragments of the next
-// section the extractor swept in after the closing "Write at least 250 words."
-// line, and telling description from furniture is a judgement call rather than a
-// regex. So it goes to the model, like every other read of the book.
-//
-// The prompt lives here (not in the route) for the same reason reading's do: it
-// describes the input format, and that description has to stay in one place.
+// Prompt for writing extraction: Task 2's description must be told apart from
+// the heading, page banners and swept-in fragments around it — a judgement
+// call, so it goes to the model. (Task 1 is a chart kept as a page image.)
+// Lives here, like reading's prompts, so the input-format description stays
+// in one place.
 
 import { INPUT_FORMAT } from "./shared";
 
-// What a clean task description is made of, as the example the prompt holds up
-// shows: the instruction lines, the topic, and the closing instructions.
+// What a clean task description is made of, as the example shows.
 const EXAMPLE = `Write at least 250 words. You should spend about 40 minutes on this task. Write about the following topic: Give reasons for your answer and include any relevant examples from your own knowledge or experience. Access to clean water is a basic human right. Therefore, every home should have a water supply that is provided free of charge. Do you agree or disagree? Give reasons for your answer and include any relevant examples from your own knowledge or experience. Write at least 250 words.`;
 
 export function taskPromptPrompt(text: string): string {

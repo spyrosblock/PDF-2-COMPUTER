@@ -1,17 +1,9 @@
 "use client";
 
-// The machinery every part's analysis shares.
-//
-// Reading and listening are read out of the book the same way — check the text,
-// get the questions (whole, or a page at a time with the pages the API asked to
-// see rendered as images), then structure them — so that walk lives here once,
-// pointed at whichever skill's routes by `QuestionRoutes`. What differs is what
-// each skill wraps around it: reading also splits off the passage, listening also
-// finds the pictures its questions are answered against.
-//
-// The Claude API key never reaches the browser: nothing here calls it directly,
-// only our own routes under /api, which hold the prompts and make the upstream
-// calls (see lib/claude/client.ts).
+// The machinery every part's analysis shares: check the text, read the
+// questions (whole, or a page at a time with images), then structure them —
+// pointed at a skill's routes by `QuestionRoutes`. Never calls the Claude API
+// directly; only our /api routes do.
 
 import {
   openPdf,
@@ -52,9 +44,8 @@ type QuestionsReply =
   | { status: "ok"; questions: string }
   | { status: "need-pages"; pages: number[] };
 
-// Opens the PDF the first time a page image is actually wanted, and keeps it open
-// for the rest of the run — most parts never need one, and re-opening per page
-// would re-parse the whole file each time.
+// Opens the PDF on first use and keeps it open — most parts never need a page
+// image, and re-opening per page would re-parse the file each time.
 export function lazyRenderer(file: File): {
   image: RenderPage;
   close: () => Promise<void>;
@@ -73,9 +64,8 @@ export function lazyRenderer(file: File): {
   };
 }
 
-// The pages to walk: every page of the part that has text, plus any page the
-// model asked for that has none (a page whose text layer came out empty is
-// exactly the kind it asks to see), in printed order.
+// The pages to walk: every page with text, plus any requested page without
+// (an empty text layer is exactly the kind the model asks to see), in order.
 function pagesToWalk(
   part: Part,
   wanted: number[],
@@ -88,9 +78,8 @@ function pagesToWalk(
   return [...pages, ...extra].sort((a, b) => a.page - b.page);
 }
 
-// The last step. Best-effort: a part whose questions can't be structured still
-// has them as text, so a failure here is logged and swallowed rather than losing
-// the part.
+// The last step, best-effort: failure is logged and swallowed, leaving the
+// questions as text.
 async function structure(
   route: string,
   questions: string,
@@ -107,9 +96,8 @@ async function structure(
   }
 }
 
-// Read one part's questions: as text, and — when that step manages it — as
-// question groups. Shared by both skills; see lib/analyze/reading.ts and
-// lib/analyze/listening.ts for what each adds around it.
+// Read one part's questions as text and, when structuring succeeds, as
+// question groups. Shared by both skills.
 export async function readQuestions(
   part: Part,
   routes: QuestionRoutes,
@@ -126,25 +114,29 @@ export async function readQuestions(
     };
   }
 
-  // Ignore any page outside this part — the model only ever sees this part's
-  // text, so a page number beyond it is a misread rather than a real request.
+  // Ignore pages outside this part — a page number beyond it is a misread.
   const wanted = check.pages.filter(
     (p) => p >= part.startPage && p <= part.endPage,
   );
 
-  const chunks: string[] = [];
-  for (const page of pagesToWalk(part, wanted)) {
-    const { questions } = await post<{ questions: string }>(routes.page, {
-      page: page.page,
-      text: page.text,
-      image: wanted.includes(page.page) ? await image(page.page) : undefined,
-    });
-    if (questions) chunks.push(questions);
-  }
+  // Pages are independent reads, so they all go up at once; `Promise.all`
+  // keeps the replies in printed order for the join.
+  const replies = await Promise.all(
+    pagesToWalk(part, wanted).map(async (page) => {
+      const { questions } = await post<{ questions: string }>(routes.page, {
+        page: page.page,
+        text: page.text,
+        image: wanted.includes(page.page)
+          ? await image(page.page)
+          : undefined,
+      });
+      return questions;
+    }),
+  );
+  const chunks = replies.filter((questions) => questions !== "");
 
-  // The page-by-page walk hands back one chunk per page, so a question set that
-  // straddled a page break is split across two of them. Structuring runs on the
-  // joined text, which puts it back together.
+  // One chunk per page; structuring runs on the joined text, which puts a set
+  // straddling a page break back together.
   const questions = chunks.join("\n\n");
   return {
     questions,
@@ -153,8 +145,7 @@ export async function readQuestions(
   };
 }
 
-// Run `fn` over the items with at most `limit` in flight, keeping the results in
-// the items' own order.
+// Run `fn` over the items with at most `limit` in flight, results in order.
 export async function mapPool<T, R>(
   items: T[],
   limit: number,

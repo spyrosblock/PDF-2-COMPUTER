@@ -1,21 +1,9 @@
-// The prompt that turns a skill's printed answer key into something markable.
-//
-// lib/pdf/answers.ts peels the key off the end of each Listening and Reading
-// skill, but only as text: the page as the extractor left it, columns
-// interleaved, running headers still in it, and the answers themselves written
-// the way an examiner reads them rather than the way a comparison does —
-// "(the) blue whale", "car park OR parking lot", "23 & 24 IN EITHER ORDER B E".
-//
-// This step reads that page into one entry per numbered box, with every form the
-// book allows written out in full, so marking a student's sheet is a lookup and
-// nothing cleverer (lib/questions/key.ts). The expansion is the whole point of
-// asking a model rather than a regex: the parentheses, the ORs and the unordered
-// pairs are printed conventions, and each of them means "these other strings are
-// also right".
-//
-// The fidelity rule is the same as the question extraction's, and matters as much:
-// an invented alternative marks a wrong answer right, and a dropped one marks a
-// right answer wrong. The model expands what is printed and adds nothing.
+// The prompt that turns a printed answer key (interleaved columns, headers,
+// examiner conventions like "(the) blue whale" and "23 & 24 IN EITHER ORDER")
+// into one entry per numbered box with every accepted form written out — so
+// marking (lib/questions/key.ts) is a plain lookup. The model expands what is
+// printed and adds nothing: an invented alternative marks a wrong answer right,
+// a dropped one marks a right answer wrong.
 
 import { INPUT_FORMAT, type QuestionSkill } from "./shared";
 

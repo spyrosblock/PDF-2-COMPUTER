@@ -3,10 +3,14 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
+    "copy-pdfjs-assets": "node scripts/copy-pdfjs-assets.mjs",
+    "predev": "npm run copy-pdfjs-assets",
     "dev": "next dev",
+    "prebuild": "npm run copy-pdfjs-assets",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint"
+    "lint": "eslint",
+    "postinstall": "npm run copy-pdfjs-assets"
   },
   "dependencies": {
     "next": "16.2.12",

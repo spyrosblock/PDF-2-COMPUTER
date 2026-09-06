@@ -1,6 +1,6 @@
 "use client";
 
-import { Suspense, useCallback, useRef, useState } from "react";
+import { Suspense, useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import {
@@ -8,6 +8,7 @@ import {
   splitIntoSkills,
   splitSkillIntoParts,
   splitOffAnswers,
+  splitBookAnswers,
   attachWritingImages,
   formatSkill,
   formatText,
@@ -17,6 +18,7 @@ import {
   type TestSkill,
 } from "@/lib/pdf";
 import { analyzeBook, type AnalysisProgress } from "@/lib/analyze";
+import { formatDuration } from "@/lib/timers";
 import type { AnswerKey } from "@/lib/questions";
 import { saveBook } from "@/lib/books";
 import { useDebug } from "@/lib/debug";
@@ -42,6 +44,11 @@ function UploadPageContent() {
   const [fileName, setFileName] = useState<string>("");
   const [progress, setProgress] = useState<Progress | null>(null);
   const [analysis, setAnalysis] = useState<AnalysisProgress | null>(null);
+  const [analysisTime, setAnalysisTime] = useState<number | null>(null);
+  // When the AI-parsing wait began (epoch ms) and a clock tick that re-renders
+  // the running timer a few times a second while it waits.
+  const [analysisStart, setAnalysisStart] = useState(0);
+  const [now, setNow] = useState(0);
   const [failed, setFailed] = useState<string[]>([]);
   const [pages, setPages] = useState<PageResult[]>([]);
   const [skills, setSkills] = useState<TestSkill[]>([]);
@@ -57,6 +64,9 @@ function UploadPageContent() {
     setSkills([]);
     setProgress(null);
     setAnalysis(null);
+    setAnalysisTime(null);
+    setAnalysisStart(0);
+    setNow(0);
     setFailed([]);
     setFileName(file.name);
 
@@ -64,36 +74,35 @@ function UploadPageContent() {
       const results = await extractPdf(file, (p) => setProgress(p));
       setPages(results);
 
-      // Split into skills, peel each skill's answer key off the end, then
-      // subdivide the remaining passages/questions into parts. Answer separation
-      // and part detection both run on the raw (marker-carrying) text, before
-      // formatSkill strips the markers — and answers are split off first so the
-      // answer page is never swept into the last part. Finally, rasterise each
-      // Writing Task 1 page to a full-page image (a second, cheap PDF pass) so the
-      // chart/graph the text layer can't carry is preserved. The result is what's
-      // previewed here and what saveBook persists to IndexedDB.
+      // Split into skills, peel each answer key off first (so it's never swept
+      // into the last part), then subdivide into parts — all on the raw
+      // marker-carrying text, before formatSkill strips the markers. Books that
+      // print one back-of-book key section instead of a key per skill have
+      // nothing to peel, so fall back to that section's page for the skill.
+      // Finally rasterise each Writing Task 1 page to an image.
+      const bookAnswers = splitBookAnswers(results);
       const built = splitIntoSkills(results).map((raw) => {
         const { content, answers } = splitOffAnswers(raw);
+        const key =
+          answers ?? bookAnswers.get(`${raw.test}:${raw.skill}`) ?? null;
         return {
           ...formatSkill(content),
           parts: splitSkillIntoParts(content),
-          answers: answers ? formatText(answers) : null,
+          answers: key ? formatText(key) : null,
         };
       });
       const withImages = await attachWritingImages(file, built);
       setSkills(withImages);
 
-      // Last, read the questions out of every reading and listening part — the
-      // passage split off from the questions, the questions themselves, and the
-      // maps a listening set is answered against — and each skill's answer key
-      // into the answers themselves, so a finished paper can be marked. That
-      // takes judgement rather than a regex, so it goes through our /api routes
-      // to the Claude API — the one step that leaves the machine, and the slow
-      // one (several API calls per part), hence its own progress line. Whatever
-      // fails keeps the raw text it was to be read from.
+      // Read the questions out of every reading/listening part (passage,
+      // questions, maps) and each skill's answer key — via the /api routes to
+      // the Claude API. The slow step, hence its own progress line. Whatever
+      // fails keeps its raw text.
+      setAnalysisStart(Date.now());
       const analysed = await analyzeBook(file, withImages, setAnalysis);
       setSkills(analysed.skills);
       setFailed(analysed.failed);
+      setAnalysisTime(analysed.elapsedMs);
       setStatus("done");
     } catch (err) {
       console.error(err);
@@ -113,6 +122,9 @@ function UploadPageContent() {
     setSkills([]);
     setProgress(null);
     setAnalysis(null);
+    setAnalysisTime(null);
+    setAnalysisStart(0);
+    setNow(0);
     setFailed([]);
     setError("");
     setSaveError("");
@@ -121,12 +133,20 @@ function UploadPageContent() {
   };
 
   const busy = status === "working";
+
+  // Tick while the AI parsing is in flight so the waiting timer advances.
+  useEffect(() => {
+    if (!busy || analysisStart === 0) return;
+    const id = setInterval(() => setNow(Date.now()), 250);
+    return () => clearInterval(id);
+  }, [busy, analysisStart]);
+
+  const waitingMs = analysisStart > 0 && now > analysisStart ? now - analysisStart : 0;
   const ocrCount = pages.filter((p) => p.source === "ocr").length;
   const fullText = pages
     .map((p) => `----- Page ${p.page} (${p.source}) -----\n${p.text.trim()}`)
     .join("\n\n");
-  // Persist this book to IndexedDB, then open it. We wait for the write to
-  // commit before navigating so the test pages find it on arrival.
+  // Persist to IndexedDB, then open; wait for the commit before navigating.
   const goToTests = async () => {
     setSaving(true);
     setSaveError("");
@@ -146,14 +166,6 @@ function UploadPageContent() {
           <h1 className="text-2xl font-semibold tracking-tight">
             Upload IELTS practice PDF
           </h1>
-          <p className="text-sm text-black/60 dark:text-white/60">
-            The PDF is read in your browser — the file itself never leaves your
-            machine. We extract the text layer directly, falling back to
-            on-device OCR for any scanned page. The reading and listening parts
-            are then sent as text (and, where they came out garbled, as page
-            images) to our server, to have their passages, questions, maps and
-            answer keys read out of them.
-          </p>
         </div>
         <Link
           href="/tests"
@@ -223,6 +235,7 @@ function UploadPageContent() {
           }
           done={analysis.done}
           total={analysis.total}
+          elapsedMs={waitingMs}
         />
       )}
 
@@ -239,6 +252,12 @@ function UploadPageContent() {
               Extracted <strong>{pages.length}</strong> page
               {pages.length === 1 ? "" : "s"}
               {ocrCount > 0 && <> ({ocrCount} via OCR)</>}.
+              {analysisTime !== null && (
+                <>
+                  {" "}
+                  AI parsing took {formatDuration(analysisTime)}.
+                </>
+              )}
             </p>
             <div className="flex gap-2">
               <button
@@ -270,6 +289,14 @@ function UploadPageContent() {
               Couldn&apos;t read {failed.join(", ")} —{" "}
               {failed.length === 1 ? "it keeps" : "they keep"} the raw extracted
               text instead.
+            </p>
+          )}
+
+          {skills.length === 0 && (
+            <p className="text-sm text-amber-700 dark:text-amber-400">
+              No tests found in this PDF — the extracted text carries no
+              &ldquo;Test N&rdquo; headings, so there was nothing to split and
+              nothing to save.
             </p>
           )}
 
@@ -383,11 +410,8 @@ function UploadPageContent() {
   );
 }
 
-// What the analysis made of one part, for the debug view: a reading part's
-// passage and questions, a listening part's questions and the maps hung on them,
-// and — under both — the raw extracted text they were read out of, so a bad
-// result can be compared against its source. A part the analysis never touched
-// (Writing, or one that failed) shows that raw text alone.
+// What the analysis made of one part, for the debug view, with the raw
+// extracted text underneath for comparison. An untouched part shows raw text alone.
 function PartAnalysis({ part }: { part: Part }) {
   const analysed = part.reading ?? part.listening;
   if (!analysed) return <FormattedText text={part.text} />;
@@ -440,11 +464,8 @@ function PartAnalysis({ part }: { part: Part }) {
   );
 }
 
-// The answer key as it was read: one row per numbered box, the book's own wording
-// on the left and — where the book allowed more than one form of it — everything
-// that will be counted right on the right. For the debug view, where the point is
-// to see at a glance whether a key is complete and whether its alternatives were
-// expanded rather than invented.
+// The answer key as read: one row per box, printed wording plus the accepted
+// alternatives — for checking at a glance that the key is complete.
 function AnswerKeyView({ answers }: { answers: AnswerKey }) {
   return (
     <ul className="grid grid-cols-[repeat(auto-fill,minmax(15rem,1fr))] gap-x-4 gap-y-1 text-xs">
@@ -475,22 +496,25 @@ function AnswerKeyView({ answers }: { answers: AnswerKey }) {
   );
 }
 
-// One labelled progress bar — used for both passes over the book (page
-// extraction, then the question analysis), which report progress the same way.
+// One labelled progress bar, used for both passes over the book. An
+// `elapsedMs` shows a running timer beside the count while the AI parses.
 function ProgressBar({
   label,
   done,
   total,
+  elapsedMs,
 }: {
   label: string;
   done: number;
   total: number;
+  elapsedMs?: number;
 }) {
   return (
     <div className="flex flex-col gap-2">
       <div className="flex justify-between gap-3 text-sm text-black/70 dark:text-white/70">
         <span className="truncate">{label}</span>
-        <span className="shrink-0">
+        <span className="shrink-0 tabular-nums">
+          {elapsedMs !== undefined && `${formatDuration(elapsedMs)} · `}
           {done} / {total}
         </span>
       </div>

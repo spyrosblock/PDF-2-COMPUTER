@@ -1,33 +1,20 @@
 "use client";
 
-// Giving a question set the picture it is answered against.
-//
-// Listening Part 2 usually prints a map of a park or a plan of a building and
-// asks the student to write letters onto it; a reading passage occasionally ends
-// with a labelled diagram. None of that is text — the extraction sees the picture
-// as stray brackets and digits, and the questions beside it ("16 Farm shop
-// ........") are unanswerable without it. So the picture is rendered out of the
-// PDF and hung on the group.
-//
-// Two things have to be worked out: which printed page the picture is on, and
-// where on that page it sits. The page we can narrow down ourselves — the set's
-// own instruction line ("Label the map below.") was printed above it, so the page
-// carrying that line is the page carrying the picture. Where it sits on the page
-// only the API can say, looking at the rendered image (app/api/figure), and if it
-// can't say usefully the whole page is shown instead: a student can read a whole
-// printed page perfectly well, they just can't read a map that isn't there.
+// Giving a question set the picture it is answered against (a Listening Part 2
+// map, a labelled reading diagram). The page is narrowed down by the set's own
+// "Label the map below." line; where on the page it sits is decided by the API
+// looking at the rendered image (/api/figure) — and if that fails, the whole
+// page is shown instead.
 
 import { splitByPage, type CropBox, type Part } from "@/lib/pdf";
 import { needsFigure, type Figure, type QuestionGroup } from "@/lib/questions";
 import { post, type RenderPage } from "./shared";
 
-// How many pages to try per set before giving up and showing the first of them
-// whole. The picture is nearly always on the page that names it, so this only
-// bites when the extraction lost the instruction line.
+// Pages to try per set before showing the first one whole.
 const MAX_PAGES = 3;
 
-// The instruction that names a picture, as the book phrases it. Used to pick the
-// page, not to decide whether the set needs one — that is needsFigure's job.
+// An instruction naming a picture, as the book phrases it. Picks the page;
+// whether the set needs one is needsFigure's job.
 const NAMES_PICTURE = /\b(map|plan|diagram)\b/i;
 
 type FigureReply = {
@@ -46,11 +33,8 @@ function loose(text: string): string {
     .trim();
 }
 
-// The pages of `part` that might carry this set's picture, best guess first: the
-// page whose text names a picture, then the page carrying the set's heading, then
-// the rest of the part in printed order. A picture printed at the top of the
-// following page still gets its turn, since every page of the part is a candidate
-// in the end.
+// Candidate pages for a set's picture, best guess first: page naming a picture,
+// then the set's heading page, then the rest of the part.
 function candidatePages(part: Part, group: QuestionGroup): number[] {
   const pages = splitByPage(part.text);
   const heading = loose(group.heading);
@@ -67,8 +51,8 @@ function candidatePages(part: Part, group: QuestionGroup): number[] {
   return [...new Set([...names, ...headed, ...all])].slice(0, MAX_PAGES);
 }
 
-// Ask the API where the picture is on one page, and render it. Returns null when
-// the page carries no picture at all.
+// Ask the API where the picture is on one page, and render it (cropped when a
+// box came back). Returns null when the page has no picture.
 async function figureOnPage(
   page: number,
   group: QuestionGroup,
@@ -96,20 +80,49 @@ async function figureOnPage(
   return { image: pageImage, alt: reply.alt ?? "", page, cropped: false };
 }
 
-// Attach a figure to every group in `groups` that can't be answered without one.
-// Groups that need none — and books whose parts have none — pass straight
-// through, and the PDF is only rendered when a figure is actually wanted.
-//
-// Failures are swallowed: a set shown without its map is worse than one with it,
-// but far better than losing the whole part because one image request timed out.
+// Find one group's picture, probing candidate pages sequentially (a miss on
+// page A says nothing about page B). Failures are swallowed: better to lose the
+// map than the whole part.
+async function findFigure(
+  part: Part,
+  group: QuestionGroup,
+  image: RenderPage,
+  pageImage: (page: number) => Promise<string>,
+): Promise<Figure | null> {
+  let figure: Figure | null = null;
+  let firstTried: { page: number; shot: string } | null = null;
+  try {
+    for (const page of candidatePages(part, group)) {
+      const shot = await pageImage(page);
+      firstTried ??= { page, shot };
+      figure = await figureOnPage(page, group, image, shot);
+      if (figure) break;
+    }
+  } catch (err) {
+    console.error(`Finding the figure for "${group.heading}" failed:`, err);
+  }
+
+  // The set needs a picture the API couldn't point at: show the most likely
+  // page, whole.
+  if (!figure && firstTried) {
+    figure = {
+      image: firstTried.shot,
+      alt: "",
+      page: firstTried.page,
+      cropped: false,
+    };
+  }
+  return figure;
+}
+
+// Attach a figure to every group that needs one. Groups run side by side;
+// within a group the pages are probed in turn. Pages are rendered once each.
 export async function attachFigures(
   part: Part,
   groups: QuestionGroup[],
   image: RenderPage,
 ): Promise<QuestionGroup[]> {
-  if (!groups.some(needsFigure)) return groups;
-
-  // One render per page, however many of the part's sets point at it.
+  // One render per page, however many sets point at it.
   const rendered = new Map<number, Promise<string>>();
   const pageImage = (page: number) => {
     const existing = rendered.get(page);
@@ -119,38 +132,15 @@ export async function attachFigures(
     return fresh;
   };
 
-  const out: QuestionGroup[] = [];
-  for (const group of groups) {
-    if (!needsFigure(group)) {
-      out.push(group);
-      continue;
-    }
+  const figures = await Promise.all(
+    groups
+      .filter(needsFigure)
+      .map((group) => findFigure(part, group, image, pageImage)),
+  );
 
-    let figure: Figure | null = null;
-    let firstTried: { page: number; shot: string } | null = null;
-    try {
-      for (const page of candidatePages(part, group)) {
-        const shot = await pageImage(page);
-        firstTried ??= { page, shot };
-        figure = await figureOnPage(page, group, image, shot);
-        if (figure) break;
-      }
-    } catch (err) {
-      console.error(`Finding the figure for "${group.heading}" failed:`, err);
-    }
-
-    // The set plainly needs a picture and the API found none it could point at.
-    // Show the page it was most likely printed on, whole.
-    if (!figure && firstTried) {
-      figure = {
-        image: firstTried.shot,
-        alt: "",
-        page: firstTried.page,
-        cropped: false,
-      };
-    }
-
-    out.push(figure ? { ...group, figure } : group);
-  }
-  return out;
+  return groups.map((group) => {
+    if (!needsFigure(group)) return group;
+    const figure = figures.shift();
+    return figure ? { ...group, figure } : group;
+  });
 }

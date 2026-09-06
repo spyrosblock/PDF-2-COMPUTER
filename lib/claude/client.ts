@@ -1,25 +1,15 @@
-// Server-side client for the hosted Claude endpoint.
-//
-// The endpoint takes a prompt plus optional files and answers with
-// `{ "output": "<the model's reply>" }`. Two request shapes, and they are not
-// interchangeable: with no files it must be a JSON body, with files it must be
-// multipart (the server rejects a multipart request whose `text` field arrives
-// without a file). askClaude picks the right one.
-//
-// The API key lives in .env as CLAUDE_API_KEY and is read here only. This module
-// must never be imported from a client component — the routes under
-// app/api/reading are the only callers, so the key stays on the server.
-//
-// Second provider: setting AI_PROVIDER=openrouter in .env routes every call
-// through OpenRouter's chat-completions API instead (OPENROUTER_API_KEY,
-// OPENROUTER_MODEL). The rest of the codebase only ever sees askClaude, so the
-// switch lives entirely inside this module.
+// Server-side client for the hosted Claude endpoint (`{ "output": "..." }`
+// replies). JSON body without files, multipart with them — the shapes are not
+// interchangeable; askClaude picks. The key lives in .env and is read here only:
+// never import this from a client component. Setting AI_PROVIDER=openrouter
+// routes every call through OpenRouter instead; the switch is invisible outside
+// this module.
 
 const DEFAULT_URL = "https://a1vm.duckdns.org/api/claude";
 const OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions";
 
-// Page-image reads are the slow case (a whole page rasterised at 2x), so the
-// timeout is generous; without one a hung upstream would pin a request forever.
+// Generous timeout: page-image reads are slow, and a hung upstream would pin
+// a request forever.
 const TIMEOUT_MS = 240_000;
 
 export type Attachment = {
@@ -85,8 +75,7 @@ export async function askClaude(
 }
 
 // The same question, answered through OpenRouter. Attachments become base64
-// data-URL image parts on the message — the shape OpenRouter's vision-capable
-// models expect. The reply is choices[0].message.content.
+// data-URL image parts; the reply is choices[0].message.content.
 async function askOpenRouter(
   text: string,
   attachments: Attachment[],
@@ -171,15 +160,9 @@ export function textOrEmpty(reply: string): string {
   return /^none\.?$/i.test(trimmed) ? "" : trimmed;
 }
 
-// Ask for a block of text rather than a JSON verdict.
-//
-// `retryIfEmpty` is for the calls where an empty answer cannot be right — a
-// reading part always has a passage, a page the model asked to see always has
-// questions on it. It answers NONE to those anyway, roughly one time in seven,
-// and asking again unchanged has answered properly every time since. So: one
-// retry, and only where the caller knows the emptiness is wrong. Where NONE is a
-// legitimate answer (a page that really is all passage) the caller leaves this
-// off and the first answer stands.
+// Ask for a block of text rather than a JSON verdict. `retryIfEmpty` gives the
+// call one more go when the model answers NONE despite the caller knowing an
+// empty answer can't be right.
 export async function askClaudeForText(
   prompt: string,
   attachments: Attachment[] = [],
@@ -190,9 +173,8 @@ export async function askClaudeForText(
   return textOrEmpty(await askClaude(prompt, attachments));
 }
 
-// Turn a canvas data URL ("data:image/jpeg;base64,...") into bytes we can attach.
-// The client renders page images with canvas.toDataURL, so this is the form they
-// arrive in. Throws on anything that isn't a base64 data URL.
+// Turn a canvas data URL into bytes we can attach. Throws on anything that
+// isn't a base64 data URL.
 export function dataUrlToAttachment(dataUrl: string, name: string): Attachment {
   const m = /^data:([^;,]+);base64,([\s\S]+)$/.exec(dataUrl);
   if (!m) throw new Error("Page image was not a base64 data URL.");

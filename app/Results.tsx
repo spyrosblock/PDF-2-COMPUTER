@@ -1,18 +1,9 @@
 "use client";
 
-// The paper marked: what the student got right, and what the book says the rest
-// should have been.
-//
-// The marking itself is lib/questions/key.ts — a pure comparison of the sheet
-// (lib/answers.ts) against the key read off the back of the book. This is only
-// its report: the score, then a line per box the student didn't get, carrying
-// what they wrote beside what the book prints. Nothing is explained and nothing
-// is scored into a band; the student is shown their own answer next to the right
-// one, which is what makes the mistake legible.
-//
-// Only the numbered boxes the key covers are here. A gap the extraction left
-// unnumbered has nothing to be marked against, and a key that came back short
-// marks only as far as it goes — `total` is the key's length, never a hopeful 40.
+// The paper marked: the score, then a line per box showing what the student
+// wrote beside what the book prints. Marking itself is lib/questions/key.ts.
+// Only numbered boxes the key covers are here — `total` is the key's length,
+// never a hopeful 40.
 
 import type { Marking } from "@/lib/questions";
 

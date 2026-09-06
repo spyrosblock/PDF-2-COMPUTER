@@ -3,7 +3,7 @@
 export { extractPdf } from "./extract";
 export { splitIntoSkills } from "./split";
 export { splitSkillIntoParts } from "./parts";
-export { splitOffAnswers } from "./answers";
+export { splitOffAnswers, splitBookAnswers } from "./answers";
 export { attachWritingImages, openPdf, renderPageImage } from "./render";
 export type { CropBox } from "./render";
 export { formatText, formatSkill, splitByPage } from "./format";
