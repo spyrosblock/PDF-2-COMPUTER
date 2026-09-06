@@ -83,8 +83,10 @@ export async function extractPageQuestions(
 }
 
 // Tries per question set: timeout, unparseable reply, or a missing question
-// number / option list all warrant one retry, but not failing the part.
-const TRIES = 2;
+// number / gap / option list all warrant another go, but not failing the part.
+// Five, because a set that comes back without the gaps a student types into is
+// unusable, and a fresh call usually fixes it where a fresh prompt can't.
+const TRIES = 3;
 
 async function structureOnce(
   set: string,
@@ -127,8 +129,8 @@ async function structureSet(
 
 // Step 3. The questions as structured groups — one call per printed set, cut
 // at its group headings first (a whole part's JSON reply would time out; see
-// lib/questions/split.ts) and structured side by side. The fuller try is kept
-// when neither is complete.
+// lib/questions/split.ts) and structured side by side. The fullest try is kept
+// when none of them is complete.
 export async function structureQuestions(
   questions: string,
   skill: QuestionSkill,
@@ -141,9 +143,9 @@ export async function structureQuestions(
 
 // Step 4. The skill's printed answer key as the answers themselves. Not part
 // of the walk: a key covers a whole skill and is split off early (see
-// lib/pdf/answers.ts); it goes up in a single call. Same two tries as the
-// question sets — a hole in the numbering is the tell of a skipped line, and
-// the reading that skipped less is kept.
+// lib/pdf/answers.ts); it goes up in a single call. Same tries as the question
+// sets — a hole in the numbering is the tell of a skipped line, and the reading
+// that skipped least is kept.
 export async function extractAnswerKey(
   text: string,
   skill: QuestionSkill,

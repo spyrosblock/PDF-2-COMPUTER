@@ -1,7 +1,9 @@
-// Checking a structured set against the text it came from: do the numbers the
-// heading claims all appear, and does the printed option list come back? Both
-// fail silently — a tidy question with nothing to choose from. A coverage
-// check, not a proof: it can't catch rewording, only plainly missing content.
+// Checking a structured set against the text it came from: is there anything to
+// answer at all, do the numbers the heading claims all appear, and does the
+// printed option list come back? All three fail silently — a tidy question with
+// nothing to choose from, or a summary whose gaps were written back as prose. A
+// coverage check, not a proof: it can't catch rewording, only plainly missing
+// content.
 
 import { groupNumbers, headingNumbers, type QuestionGroup } from "./types";
 import { isSetHeading } from "./split";
@@ -47,6 +49,10 @@ export function setCoverage(set: string, groups: QuestionGroup[]): Coverage {
   if (groups.length === 0) return { complete: false, score: 0 };
 
   const covered = new Set(groups.flatMap(groupNumbers));
+  // Not one numbered question and not one gap: whatever came back, there is
+  // nothing in it a student can answer.
+  if (covered.size === 0) return { complete: false, score: 0 };
+
   const missingNumbers = sourceNumbers(set).filter((n) => !covered.has(n));
 
   // Two option-looking lines are as likely to be a stray "A." in prose as a list;
