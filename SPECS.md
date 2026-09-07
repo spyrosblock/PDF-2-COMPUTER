@@ -1,82 +1,153 @@
-# PdfToComputer - P2C
+# PdfToComputer — P2C
 
 # Goal
-Help students prepare for the IELTS Academic exam by simulating the new computer-delivered test format (listening, reading, writing).
 
-# Note: this spec is incomplete
+Help students prepare for the IELTS Academic exam by simulating the new
+computer-delivered test format, using the practice book they already own.
 
-# How it works - high level
-- Students have already bought an official "IELTS Academic authentic practice tests" book from Cambridge, as a PDF.
-- They upload that PDF to this app.
-- The app returns a digitised version of the tests in the book, so students can answer questions in the same format used on the actual computer-delivered test at the IELTS exam center.
-- After a student completes a test, they can download a PDF report of their reading results.
-- Scope: reading only (listening/writing/speaking are out of scope).
+A student has bought an official Cambridge *IELTS Academic authentic practice
+tests* book as a PDF. They upload it; the app digitises the tests inside it so
+they can answer in the same on-screen format used at the exam centre, and marks
+the paper against the book's own answer key.
 
-# How it works - low level
-## Uploading
-Student uploads the book PDF, which contains 4 full practice tests plus an answer key section (each test's reading passages, questions, and correct answers).
-## Get test data
-OCR extracts, per test: the reading passages, the questions (with type, per the list below), and the correct answers from the book's answer key.
-## Create tests
-From the extracted data, assemble 4 independent digitised tests, each with its reading passages, question sets, and answer key.
-## Test structure
-Each test consists of 1 reading skill, made up of 3 sections:
-- **Section 1**: a text with some paragraphs, followed by 13 questions.
-- **Section 2**: a text with some paragraphs, followed by 13 questions.
-- **Section 3**: a text with some paragraphs, followed by 14 questions.
+This file is the intent: what the product is for, what the exam format demands,
+and what is deliberately left out. How the app actually turns a PDF into a test
+— extraction, analysis, storage, the page structure — is in
+[README.md](README.md), which is the description of record. Don't restate it
+here; two descriptions of one pipeline is how this file went stale before.
 
-Total: 40 questions per test (13 + 13 + 14), matching the official IELTS Academic Reading test.
-## User selects test
-The student picks which of the 4 tests to take (e.g. Test 2).
-## Load reading
-The system loads the reading passages and questions for the selected test in the 'ielts like' format (see below).
-## Start timer
-A 60-minute countdown timer starts. It is advisory only: the test does not auto-submit or lock when it reaches zero, and the student can keep answering.
-## Answer questions
-The student selects/enters answers per the question type (see "Types of reading questions" below). Answers can be changed until submission.
-## Test end
-The student ends the test manually (there is no automatic end condition).
-## Grading
-On submission, answers are compared against the extracted answer key. Score is reported as a raw score (e.g. 32/40); band-score conversion is out of scope since it varies per test administration and isn't fixed in the book. The student can download a PDF report showing their raw score and each incorrect answer (their answer vs. the correct answer).
+# Scope
+
+A book holds 4 tests. Each test offers three skills:
+
+- **Listening** — 4 parts, 10 questions each.
+- **Reading** — 3 passages, 13 / 13 / 14 questions.
+- **Writing** — 2 tasks; Task 1 is the printed chart, Task 2 the essay prompt.
+
+Speaking is extracted from the book but not offered as a sittable skill: it is
+an examiner interview, with nothing for a student to do alone on screen.
+
+Listening is sat without audio. The books ship the recordings separately, and
+the printed audio scripts are dropped during splitting rather than shown — a
+script beside the questions would give the answers away. The questions are
+therefore practice in the format, not a timed listening test.
+
+# The test experience
+
+## Exam-like layout
+
+The computer-delivered test splits the screen; so do we.
+
+- **Reading**: passage on the left, that part's questions on the right, each
+  side scrolling independently.
+- **Writing**: the task (chart image or prompt) on the left, the essay typed on
+  the right, with a live word count against the task's minimum (150 / 250).
+- **Listening**: questions alone, with the map, plan or diagram a set is
+  answered against shown beside it.
+
+Question groups carry their printed heading ("Questions 14-20") and the
+instruction lines under it verbatim — word limits, "Choose TWO letters", the
+list of headings — because those instructions are part of what is being tested.
+
+## Parts and navigation
+
+A skill's parts are tabs. Switching parts keeps the timer running and preserves
+everything already answered; a student can move back and forth freely until
+they submit.
+
+## Timing
+
+A stopwatch per skill, counting up from zero, started and stopped by the
+student and surviving a reload. Advisory only: nothing auto-submits and nothing
+locks.
+
+This is deliberately *not* the exam's countdown. The book gives no invigilator
+and no fixed sitting; a student practising at their desk is better served by
+seeing how long a part actually took them than by being cut off.
+
+## Marking
+
+On submit, the sheet is compared against the answer key printed in the book.
+
+- Reported as a raw score (e.g. 32/40) over the boxes the key actually covers,
+  with a line per wrong answer showing what the student wrote beside what the
+  book prints.
+- Where the key lists several acceptable forms for one answer ("aircraft /
+  plane"), every form is captured and any of them counts.
+- Where the key marks a set as unordered ("23 & 24 IN EITHER ORDER"), either
+  number may hold either answer, each counting once.
+- Only case, punctuation and hyphen-vs-space are forgiven. IELTS marks
+  spelling, so no stemming and no synonyms — anything else the book allows must
+  be written out as an accepted form.
+- Writing is not marked. There is no key to mark it against; the student writes
+  the essay and keeps it.
 
 # Types of reading questions
-There are 11 official IELTS Academic Reading question types. A single reading passage typically contains 2-3 different types, grouped into sets with shared instructions (e.g. "Questions 14-18").
 
-1. **Multiple Choice** - Choose one correct answer from 4 options (A-D), or choose 2+ correct answers from a longer list. UI: radio buttons (single answer) or checkboxes (multiple answers).
-2. **Identifying Information (True / False / Not Given)** - Decide whether a statement agrees with, contradicts, or is not addressed by the text. UI: 3-way radio button / select per statement.
-3. **Identifying Writer's Views/Claims (Yes / No / Not Given)** - Same mechanic as #2, but judges the statement against the writer's opinions/claims rather than facts. UI: identical to True/False/Not Given.
-4. **Matching Information** - Find which lettered paragraph/section contains a specific piece of information. UI: dropdown or drag-drop of paragraph letters per question.
-5. **Matching Headings** - Match a list of headings (given as Roman numerals, more headings than paragraphs) to each paragraph. UI: dropdown per paragraph, options consumed once used (unless reuse is allowed by the question).
-6. **Matching Features** - Match statements to a list of lettered options (e.g. people, theories, dates); options may be reused. UI: dropdown or drag-drop per statement.
-7. **Matching Sentence Endings** - Match a sentence beginning to the correct ending from a list (more endings than beginnings). UI: dropdown per sentence beginning.
-8. **Sentence Completion** - Fill a gap in a sentence using words taken directly from the text, under a strict word limit (e.g. "NO MORE THAN TWO WORDS"). UI: free-text input per gap, validated against the word-limit rule.
-9. **Summary / Note / Table / Flow-Chart Completion** - Fill gaps in a summary/notes/table/flow-chart, either with words from the text (free-text input) or by choosing from a word bank (dropdown/drag-drop) - the source text specifies which.
-10. **Diagram Label Completion** - Label parts of a diagram using words from the text, under a word limit. UI: free-text input positioned next to each diagram label/pointer.
-11. **Short-Answer Questions** - Answer a question with words taken from the text, under a word limit. UI: free-text input per question.
+There are 11 official IELTS Academic Reading question types. A single reading
+passage typically contains 2-3 of them, grouped into sets with shared
+instructions (e.g. "Questions 14-18"). This list is the reference the
+extraction prompts and the stored question model are built on — see
+`QUESTION_TYPES` in `lib/questions/types.ts`.
 
-Common constraints to enforce at grading time:
-- Word-limit questions (#8, #9, #10, #11) are marked wrong if the answer exceeds the stated word/number limit, regardless of correctness.
-- Spelling must match the source text exactly (no partial credit).
-- Where an option list is "used once only", the same option should not be assignable to two questions in that set (drag-drop naturally enforces this; dropdowns need the used option removed/disabled from other dropdowns).
+1. **Multiple Choice** — Choose one correct answer from 4 options (A-D), or
+   choose 2+ correct answers from a longer list. UI: radio buttons (single
+   answer) or checkboxes (multiple answers).
+2. **Identifying Information (True / False / Not Given)** — Decide whether a
+   statement agrees with, contradicts, or is not addressed by the text. UI:
+   3-way radio button / select per statement.
+3. **Identifying Writer's Views/Claims (Yes / No / Not Given)** — Same mechanic
+   as #2, but judges the statement against the writer's opinions/claims rather
+   than facts. UI: identical to True/False/Not Given.
+4. **Matching Information** — Find which lettered paragraph/section contains a
+   specific piece of information. UI: dropdown of paragraph letters per
+   question.
+5. **Matching Headings** — Match a list of headings (given as Roman numerals,
+   more headings than paragraphs) to each paragraph. UI: dropdown per paragraph.
+6. **Matching Features** — Match statements to a list of lettered options (e.g.
+   people, theories, dates); options may be reused. UI: dropdown per statement.
+7. **Matching Sentence Endings** — Match a sentence beginning to the correct
+   ending from a list (more endings than beginnings). UI: dropdown per sentence
+   beginning.
+8. **Sentence Completion** — Fill a gap in a sentence using words taken
+   directly from the text, under a strict word limit (e.g. "NO MORE THAN TWO
+   WORDS"). UI: free-text input per gap.
+9. **Summary / Note / Table / Flow-Chart Completion** — Fill gaps in a
+   summary/notes/table/flow-chart, either with words from the text (free-text
+   input) or by choosing from a word bank (dropdown) — the source text
+   specifies which. One type, not four: they differ only in how the gapped text
+   is laid out.
+10. **Diagram Label Completion** — Label parts of a diagram using words from
+    the text, under a word limit. UI: free-text input per label.
+11. **Short-Answer Questions** — Answer a question with words taken from the
+    text, under a word limit. UI: free-text input per question.
 
-# 'ielts like' reading
-On ielts reading the screen is split in half. At the left there is the text and at the right the questions. Each side scrolls independently.
-- **Highlighting**: students can select text on the left and highlight it (and remove highlights); purely a study aid, not graded.
-- Question groups on the right show their shared instructions (e.g. word limit, "Choose TWO letters") above the question set.
-- **Section navigation bar**: a bar fixed to the bottom of the screen lets the student switch between the test's 3 sections (e.g. "Section 1", "Section 2", "Section 3"). Selecting a section loads that section's passage and questions into the left/right panes; the timer keeps running across section switches, and answers already entered are preserved when navigating away and back.
+Listening draws on six of these — multiple choice, matching features, sentence
+completion, summary/note/table/form completion (its commonest set by far),
+diagram labelling, and short answer. The other five judge a statement against a
+printed passage and do not occur there.
 
+# Not built yet
 
-# Pages
-## Upload page
-Users upload a pdf
-## Test selection page
-Users select which test they want
-## Test page
-Users take the test
-## Results page
-Users can download the pdf with their results
+Wanted, specified, not implemented. Nothing below describes current behaviour.
 
-# Notes
-- **Answer key alternatives**: where the source answer key lists multiple acceptable forms for one answer (e.g. "aircraft / plane"), OCR extraction should capture all accepted forms, and grading accepts any of them as correct.
-- **Diagram Label Completion**: harder than the text-only question types — requires extracting the diagram image itself plus the position of each label/pointer from the PDF, then placing free-text inputs against those positions. Needs its own extraction approach, not just OCR text extraction.
-- **Multiple choice with 2+ correct answers**: graded with partial credit — one point per correct option selected (wrong selections don't earn points).
+- **Highlighting** — selecting text in the passage and highlighting it (and
+  clearing highlights), the way the real test allows. A study aid, never graded.
+- **Downloadable report** — a PDF of the marked paper to keep or hand to a
+  teacher. Results are currently shown in the page only.
+- **Word-limit enforcement** — an answer over the stated limit ("NO MORE THAN
+  TWO WORDS") is wrong regardless of its content. Marking does not check length
+  today.
+- **"Used once only" option lists** — where a set says an option is used once,
+  choosing it should remove or disable it in the other dropdowns of that set.
+- **Diagram Label Completion as a real layout** — needs the diagram image plus
+  the position of each label pointer, so inputs can sit against the picture.
+  Today the figure is shown and the labels are answered as an ordinary list.
+
+# Out of scope
+
+- **Band scores.** Only a raw score is reported. The raw-to-band conversion
+  varies per test administration and isn't fixed in the book.
+- **Speaking.** See Scope.
+- **Audio.** The books' recordings aren't in the PDF; see Scope.
+- **Essay marking.** No key exists for it in the book.

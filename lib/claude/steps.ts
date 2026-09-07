@@ -84,8 +84,8 @@ export async function extractPageQuestions(
 
 // Tries per question set: timeout, unparseable reply, or a missing question
 // number / gap / option list all warrant another go, but not failing the part.
-// Five, because a set that comes back without the gaps a student types into is
-// unusable, and a fresh call usually fixes it where a fresh prompt can't.
+// Three, because a set that comes back without the gaps a student types into
+// is unusable, and a fresh call usually fixes it where a fresh prompt can't.
 const TRIES = 3;
 
 async function structureOnce(
