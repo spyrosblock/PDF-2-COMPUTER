@@ -62,6 +62,34 @@ would ship the key to the browser.
 Add `?debug` to any page URL to reveal the extraction internals (raw page text,
 part splits, parsed question groups).
 
+## Planned changes to the pipeline
+
+Wanted, not implemented. Nothing here describes current behaviour. All three
+attack step 2's cost: a book spends roughly 150 model calls there before the
+student answers a single question.
+
+- **Analyse lazily, not upfront.** The biggest win. Upload analyses every part
+  of every skill of all four tests, though a student sits one skill at a time.
+  Analysing only the skill they open — cached in the IndexedDB record the book
+  already lives in — makes that ~15-20 calls for the skill actually sat, spread
+  over real use instead of one long wait. `analyzeBook` already works part by
+  part over a target list, so what changes is *when* it runs and how a
+  half-analysed book is stored and re-entered.
+- **Batch the answer keys.** A book's 8 keys (Listening + Reading × 4 tests) are
+  8 calls for 8 short replies. One call per skill across the tests, or one for
+  the book, cuts that to 2 or 1. Books printing a single back-of-book key
+  section (`splitBookAnswers`) already hold the text in one block. The reply
+  then has to be keyed by test and skill, and a failed batch costs four tests'
+  marking instead of one — so it wants the retry a part gets.
+- **OCR from the API.** Scans (Cambridge 5 and 14 among the samples) go through
+  Tesseract in the browser: ~140 pages, slow, and it drops display-size titles
+  and table columns that splitting then works around. The model already reads
+  rendered pages for question sets it can't parse from text
+  (`lib/claude/figures.ts`), so a scanned page could go to it as an image
+  instead — better text, no `tesseract.js`, at a call per scanned page. That
+  cost stops mattering once analysis is lazy and only the pages of the skill
+  being sat are read.
+
 ## Layout
 
 ```

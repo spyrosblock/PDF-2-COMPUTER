@@ -131,6 +131,11 @@ printed passage and do not occur there.
 
 Wanted, specified, not implemented. Nothing below describes current behaviour.
 
+- **Analysis on demand** — a book is digitised skill by skill, as the student
+  opens each, rather than in one pass at upload. The upload wait is the app's
+  worst moment, and most of it buys parts nobody opens. The cost is a shorter
+  wait on first opening a skill, which is the better place to pay it: it is
+  work the student asked for. See README for what it means for the pipeline.
 - **Highlighting** — selecting text in the passage and highlighting it (and
   clearing highlights), the way the real test allows. A study aid, never graded.
 - **Downloadable report** — a PDF of the marked paper to keep or hand to a
