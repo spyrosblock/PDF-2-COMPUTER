@@ -8,6 +8,10 @@ book's own answer key.
 
 Goals and the intended test experience are in [SPECS.md](SPECS.md).
 
+## Try it
+
+Live at <https://pdf-2-computer.vercel.app> — bring your own book PDF.
+
 ## Demo
 
 [![P2C demo video](https://img.youtube.com/vi/fGSkcq8NWXk/hqdefault.jpg)](https://youtu.be/fGSkcq8NWXk)
