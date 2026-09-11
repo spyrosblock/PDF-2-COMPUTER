@@ -10,9 +10,9 @@ Goals and the intended test experience are in [SPECS.md](SPECS.md).
 
 ## Demo
 
-[![P2C demo video](https://img.youtube.com/vi/Pv5XpA_dYWc/hqdefault.jpg)](https://youtu.be/Pv5XpA_dYWc)
+[![P2C demo video](https://img.youtube.com/vi/fGSkcq8NWXk/hqdefault.jpg)](https://youtu.be/fGSkcq8NWXk)
 
-A walkthrough of uploading a book and sitting a test: <https://youtu.be/Pv5XpA_dYWc>
+A walkthrough of uploading a book and sitting a test: <https://youtu.be/fGSkcq8NWXk>
 
 ## Getting started
 
